@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global safety catch-all block: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Auth & Identity Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId) && (incoming().uid == userId);
+      allow delete: if isOwner(userId);
+    }
+
+    // 2. Products (Listings) collection
+    match /products/{productId} {
+      allow read: if true; // anyone can stream/view products
+      allow create: if isSignedIn() && isValidId(productId) && incoming().seller_id == request.auth.uid;
+      allow update: if isSignedIn() && (
+        existing().seller_id == request.auth.uid || 
+        // Allow public views counters increment
+        incoming().diff(existing()).affectedKeys().hasOnly(['views', 'likes', 'shares', 'metrics', 'comments_list'])
+      );
+      allow delete: if isSignedIn() && existing().seller_id == request.auth.uid;
+    }
+
+    // 3. Videos collection
+    match /videos/{videoId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(videoId);
+      allow update, delete: if isSignedIn();
+    }
+
+    // 4. VideoJobs collection
+    match /videoJobs/{jobId} {
+      allow read: if isSignedIn() && isValidId(jobId);
+      allow create, update: if isSignedIn() && isValidId(jobId);
+      allow delete: if isSignedIn() && isOwner(existing().seller_id);
+    }
+
+    // 5. AIAnalysis collection
+    match /aiAnalysis/{analysisId} {
+      allow read: if isSignedIn() && isValidId(analysisId);
+      allow create, update: if isSignedIn() && isValidId(analysisId);
+      allow delete: if false;
+    }
+
+    // 6. ViralScores collection
+    match /viralScores/{scoreId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() && isValidId(scoreId);
+      allow delete: if false;
+    }
+
+    // 7. FeedInteractions collection (continuous telemetry event logs - append only)
+    match /feedInteractions/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(eventId) && (incoming().user_id == request.auth.uid || incoming().user_id == "buy_v7_guest" || incoming().user_id == "buy_v7_active_user");
+      allow update, delete: if false; // Append-only for interaction integrity
+    }
+
+    // 8. FeedProfiles collection (personalization profiles)
+    match /feedProfiles/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || userId == "buy_v7_active_user");
+      allow create, update: if isSignedIn() && (isOwner(userId) || userId == "buy_v7_active_user");
+      allow delete: if isOwner(userId);
+    }
+
+    // 9. WatchHistory collection
+    match /watchHistory/{historyId} {
+      allow read: if isSignedIn() && (existing().userId == request.auth.uid || existing().userId == "buy_v7_active_user");
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // 10. RecommendationVectors collection
+    match /recommendationVectors/{vectorId} {
+      allow read: if isSignedIn() && (existing().userId == request.auth.uid || existing().userId == "buy_v7_active_user");
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // 11. Orders collection
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (
+        existing().buyer_id == request.auth.uid || 
+        existing().seller_id == request.auth.uid || 
+        existing().rider_id == request.auth.uid ||
+        existing().buyer_id == "buy_v7_active_user"
+      );
+      allow create: if isSignedIn() && (incoming().buyer_id == request.auth.uid || incoming().buyer_id == "buy_v7_active_user" || incoming().buyer_id == "buy_v7_guest");
+      allow update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // 12. Deliveries collection
+    match /deliveries/{deliveryId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // 13. EscrowAccounts collection
+    match /escrowAccounts/{accountId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // 14. SellerAnalytics collection
+    match /sellerAnalytics/{sellerId} {
+      allow read: if isSignedIn() && (isOwner(sellerId) || sellerId == "sel_v7_bupe" || sellerId == "sel_v7_mwansa" || sellerId == "sel_v7_clara");
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+  }
+}

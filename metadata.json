@@ -1,0 +1,6 @@
+{
+  "name": "SeloNaChipa",
+  "description": "A comprehensive multi-role marketplace platform for Zambia featuring TikTok-style Discovery, AI-Powered Video Listings, and Infinity Memory Architecture.",
+  "requestFramePermissions": ["geolocation", "camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

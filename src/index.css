@@ -1,0 +1,302 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* TikTok feed container simulation rules */
+.tiktok-feed-container {
+  scroll-snap-type: y mandatory;
+  overflow-y: scroll;
+  height: 640px;
+}
+
+.tiktok-feed-slide {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* Airtel-inspired Light Theme Overrides */
+.theme-light-active {
+  background-color: #f4f6f8 !important;
+  color: #171a1d !important;
+}
+
+/* Base backgrounds mapped to crisp card layouts and backgrounds as in Airtel app */
+.theme-light-active,
+.theme-light-active .bg-zinc-950,
+.theme-light-active .bg-zinc-950\/95,
+.theme-light-active .bg-[#050506],
+.theme-light-active .bg-black,
+.theme-light-active .bg-\[\#050506\],
+.theme-light-active .bg-\[\#050506\]\/90,
+.theme-light-active .bg-\[\#050506\]\/80,
+.theme-light-active .bg-\[\#050506\]\/60,
+.theme-light-active .bg-\[\#06070a\],
+.theme-light-active .bg-\[\#090a0f\],
+.theme-light-active .bg-\[\#040507\],
+.theme-light-active .bg-\[\#030304\],
+.theme-light-active .bg-\[\#050510\],
+.theme-light-active .bg-\[\#090916\],
+.theme-light-active [class*="bg-[#050506]"],
+.theme-light-active [class*="bg-[#06070a]"],
+.theme-light-active [class*="bg-[#090a0f]"],
+.theme-light-active [class*="bg-[#040507]"],
+.theme-light-active [class*="bg-[#030304]"],
+.theme-light-active [class*="bg-[#050510]"],
+.theme-light-active [class*="bg-[#090916]"] {
+  background-color: #f4f6f8 !important;
+}
+
+.theme-light-active .bg-[#0c0d12],
+.theme-light-active .bg-zinc-900,
+.theme-light-active .bg-zinc-850,
+.theme-light-active .bg-zinc-800,
+.theme-light-active .bg-\[\#0c0d12\],
+.theme-light-active .bg-\[\#0c0d12\]\/60,
+.theme-light-active .bg-\[\#08090c\],
+.theme-light-active .bg-\[\#0b0c10\],
+.theme-light-active .bg-\[\#07080c\],
+.theme-light-active .bg-\[\#12141c\],
+.theme-light-active .bg-zinc-900\/40,
+.theme-light-active .bg-zinc-900\/60,
+.theme-light-active .bg-\[\#0a0a14\],
+.theme-light-active .bg-\[\#0b0c16\],
+.theme-light-active .bg-\[\#090b1c\],
+.theme-light-active .bg-\[\#0c0c1a\],
+.theme-light-active .bg-\[\#0b0b18\],
+.theme-light-active [class*="bg-[#0c0d12]"],
+.theme-light-active [class*="bg-[#08090c]"],
+.theme-light-active [class*="bg-[#0b0c10]"],
+.theme-light-active [class*="bg-[#07080c]"],
+.theme-light-active [class*="bg-[#12141c]"],
+.theme-light-active [class*="bg-[#0a0a14]"],
+.theme-light-active [class*="bg-[#0b0c16]"],
+.theme-light-active [class*="bg-[#090b1c]"],
+.theme-light-active [class*="bg-[#0c0c1a]"],
+.theme-light-active [class*="bg-[#0b0b18]"] {
+  background-color: #ffffff !important;
+  color: #111518 !important;
+}
+
+/* Gradient helper overrides */
+.theme-light-active .bg-gradient-to-r,
+.theme-light-active .bg-gradient-to-br,
+.theme-light-active .bg-gradient-to-tr {
+  background-image: none !important;
+  background-color: #ffffff !important;
+}
+
+/* Text overrides - high legibility dark charcoal */
+.theme-light-active h1,
+.theme-light-active h2,
+.theme-light-active h3,
+.theme-light-active h4,
+.theme-light-active h5,
+.theme-light-active h6,
+.theme-light-active .text-slate-50,
+.theme-light-active .text-slate-100,
+.theme-light-active .text-slate-200,
+.theme-light-active .text-slate-300,
+.theme-light-active .text-zinc-50,
+.theme-light-active .text-zinc-100,
+.theme-light-active .text-zinc-150,
+.theme-light-active .text-zinc-200,
+.theme-light-active .text-zinc-250,
+.theme-light-active .text-zinc-350,
+.theme-light-active .text-zinc-300,
+.theme-light-active .text-gray-50,
+.theme-light-active .text-gray-100,
+.theme-light-active .text-gray-200,
+.theme-light-active [class*="text-white"],
+.theme-light-active [class*="text-zinc-50"],
+.theme-light-active [class*="text-zinc-100"],
+.theme-light-active [class*="text-zinc-150"],
+.theme-light-active [class*="text-zinc-200"],
+.theme-light-active [class*="text-zinc-250"],
+.theme-light-active [class*="text-slate-50"],
+.theme-light-active [class*="text-slate-100"],
+.theme-light-active [class*="text-slate-200"],
+.theme-light-active [class*="text-gray-50"],
+.theme-light-active [class*="text-gray-100"],
+.theme-light-active [class*="text-gray-200"] {
+  color: #111518 !important;
+}
+
+.theme-light-active .text-white {
+  color: #111518 !important;
+}
+
+/* Medium deep slate selectors for 300, 350, 305, 355 classes */
+.theme-light-active [class*="text-zinc-300"],
+.theme-light-active [class*="text-zinc-305"],
+.theme-light-active [class*="text-zinc-350"],
+.theme-light-active [class*="text-zinc-355"],
+.theme-light-active [class*="text-slate-300"],
+.theme-light-active [class*="text-gray-300"] {
+  color: #24292f !important;
+}
+
+/* Keep white text in special elements (like elements with class 'text-slate-200' inside red containers) */
+.theme-light-active .keep-text-white,
+.theme-light-active .keep-text-white *,
+.theme-light-active .airtel-header,
+.theme-light-active .airtel-header *,
+.theme-light-active .bg-red-500,
+.theme-light-active .bg-red-500 *,
+.theme-light-active .bg-red-600,
+.theme-light-active .bg-red-600 * {
+  color: #ffffff !important;
+}
+
+/* Success Green High-Contrast overrides in Light Mode */
+.theme-light-active [class*="text-emerald"],
+.theme-light-active [class*="text-green"] {
+  color: #15803d !important; /* Beautiful green-700 with stellar contrast */
+}
+
+/* Success Green backgrounds in Light Mode */
+.theme-light-active [class*="bg-emerald-500/10"],
+.theme-light-active [class*="bg-green-500/10"],
+.theme-light-active [class*="bg-emerald-500/20"] {
+  background-color: rgba(21, 128, 61, 0.08) !important;
+  border-color: rgba(21, 128, 61, 0.25) !important;
+}
+
+/* Secondary muted elements - 400, 500, 550, 650 values styled as highly legible grays */
+.theme-light-active .text-zinc-400,
+.theme-light-active .text-slate-400,
+.theme-light-active .text-zinc-500,
+.theme-light-active .text-slate-500,
+.theme-light-active .text-gray-400,
+.theme-light-active [class*="text-zinc-450"],
+.theme-light-active [class*="text-zinc-550"],
+.theme-light-active [class*="text-slate-550"],
+.theme-light-active [class*="text-zinc-400"],
+.theme-light-active [class*="text-zinc-500"],
+.theme-light-active [class*="text-slate-400"],
+.theme-light-active [class*="text-slate-500"],
+.theme-light-active [class*="text-gray-400"] {
+  color: #5c6470 !important;
+}
+
+.theme-light-active .text-zinc-650,
+.theme-light-active [class*="text-zinc-650"] {
+  color: #718096 !important;
+}
+
+.theme-light-active .text-zinc-350,
+.theme-light-active .text-zinc-300 {
+  color: #3b424e !important;
+}
+
+/* Input placeholder light-mode overrides */
+.theme-light-active input::placeholder,
+.theme-light-active textarea::placeholder {
+  color: #718096 !important;
+  opacity: 0.85 !important;
+}
+
+/* Borders matching thin slate outlines from Airtel money cards */
+.theme-light-active .border-zinc-900,
+.theme-light-active .border-zinc-850,
+.theme-light-active .border-zinc-800,
+.theme-light-active .border-zinc-905 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Red accents & Airtel gradients where applicable */
+.theme-light-active .theme-accent-bar {
+  background: linear-gradient(135deg, #e11919 0%, #b01010 100%) !important;
+  color: #ffffff !important;
+}
+
+.theme-light-active .theme-accent-bar * {
+  color: #ffffff !important;
+}
+
+.theme-light-active .theme-accent-text {
+  color: #e11919 !important;
+}
+
+.theme-light-active .theme-accent-border {
+  border-color: #e11919 !important;
+}
+
+/* Inputs styling */
+.theme-light-active input,
+.theme-light-active select,
+.theme-light-active textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #111518 !important;
+}
+
+.theme-light-active button {
+  text-shadow: none !important;
+}
+
+.theme-light-active .bg-zinc-950\/95,
+.theme-light-active .bg-zinc-950 {
+  background-color: #ffffff !important;
+}
+
+.theme-light-active .bg-teal-500\/10,
+.theme-light-active .bg-blue-500\/10,
+.theme-light-active .bg-purple-500\/10,
+.theme-light-active .bg-amber-500\/10,
+.theme-light-active .bg-indigo-500\/10 {
+  background-color: rgba(225, 25, 25, 0.08) !important;
+  border-color: rgba(225, 25, 25, 0.25) !important;
+  color: #e11919 !important;
+}
+
+.theme-light-active .text-teal-400,
+.theme-light-active .text-blue-400,
+.theme-light-active .text-purple-400,
+.theme-light-active .text-amber-400,
+.theme-light-active .text-indigo-400 {
+  color: #e11919 !important;
+}
+
+.theme-light-active .text-zinc-500 {
+  color: #64748b !important;
+}
+
+/* Header style overrides to make it resemble the Airtel Red bar as in the screenshot */
+.theme-light-active .airtel-header {
+  background-color: #e11919 !important;
+  color: #ffffff !important;
+}
+
+.theme-light-active .airtel-header * {
+  color: #ffffff !important;
+}
+
+/* Ensure secondary action buttons are outlined or filled beautiful Airtel red */
+.theme-light-active .airtel-button {
+  background-color: #e11919 !important;
+  color: #ffffff !important;
+}
+
+.theme-light-active .airtel-button-outline {
+  border-color: #e11919 !important;
+  color: #e11919 !important;
+  background-color: #ffffff !important;
+}
+
+

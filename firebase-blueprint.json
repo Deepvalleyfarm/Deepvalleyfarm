@@ -1,0 +1,316 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account registration with role and profile preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier of the user (from Auth)" },
+        "email": { "type": "string", "format": "email", "description": "Primary communication email" },
+        "displayName": { "type": "string", "description": "Human name or handle" },
+        "role": { "type": "string", "enum": ["BUYER", "SELLER", "AGENT", "RIDER", "ADMIN"], "description": "System role" },
+        "phoneNumber": { "type": "string", "description": "Contact phone number" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of profile creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last modification" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Product": {
+      "title": "Product Listing",
+      "description": "Formulated item listing with category, suggested price, and video specifications",
+      "type": "object",
+      "properties": {
+        "listing_id": { "type": "string", "description": "Unique product listing ID" },
+        "title": { "type": "string", "description": "Title of the item" },
+        "description": { "type": "string", "description": "Detailed description" },
+        "suggested_price": { "type": "number", "description": "Price in local currency ZMW" },
+        "category": { "type": "string", "description": "Category folder classification" },
+        "location": { "type": "string", "description": "Geographical seller location string" },
+        "distance_km": { "type": "number", "description": "Geographical offset from active shopper" },
+        "seller_id": { "type": "string", "description": "Seller user ID reference" },
+        "video_url": { "type": "string", "description": "TikTok-style advertising video URL" },
+        "thumbnail": { "type": "string", "description": "Emoji thumbnail character" },
+        "views": { "type": "integer", "description": "Total visual plays count" },
+        "likes": { "type": "integer", "description": "Total video engagement likes" },
+        "shares": { "type": "integer", "description": "Cumulative video shares" },
+        "provenance": { "type": "string", "description": "Farm or manufacturer provenance" },
+        "freshness": { "type": "string", "description": "Attribute detailing freshness" },
+        "recommended_use": { "type": "string", "description": "Recommended application detail" },
+        "status": { "type": "string", "enum": ["live", "draft", "paused"], "description": "Publish status" },
+        "cover_frame": { "type": "string", "description": "Video cover thumbnail select frame" },
+        "seo_tags": { "type": "array", "description": "Search indexable tags list" },
+        "image_url": { "type": "string", "description": "Original raw uploaded source photo" },
+        "transition_effect": { "type": "string", "enum": ["Fade", "Slide", "Zoom"], "description": "VFX frame style" },
+        "noise_reduction": { "type": "boolean", "description": "Has clear-voice sound filter" },
+        "narration_text": { "type": "string", "description": "Voice narration script text" },
+        "narration_audio_url": { "type": "string", "description": "Generated speech MP3 audio path" },
+        "bg_music_track": { "type": "string", "description": "Soundtrack track label paired" },
+        "bg_music_url": { "type": "string", "description": "Background track audio source file" },
+        "viral_score": { "type": "number", "description": "Dynamically compiled algorithmic engagement value" }
+      },
+      "required": ["listing_id", "title", "suggested_price", "seller_id"]
+    },
+    "Video": {
+      "title": "Rendered Video Creative",
+      "description": "Composited advertising video clips meta-data",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string", "description": "Unique video creative identifier" },
+        "listing_id": { "type": "string", "description": "Parent Listing ID relation key" },
+        "assembledVideoUrl": { "type": "string", "description": "Direct URI to layered composite video asset" },
+        "overlayStyle": { "type": "string", "description": "Subtitle caption style" },
+        "durationSec": { "type": "number", "description": "Combined timeline length" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["videoId", "listing_id", "assembledVideoUrl"]
+    },
+    "VideoJob": {
+      "title": "Video Rendering Job",
+      "description": "Asynchronous render task parameters and AI generation status trackers",
+      "type": "object",
+      "properties": {
+        "jobId": { "type": "string", "description": "Identifier of the queue task" },
+        "listing_id": { "type": "string", "description": "Target listing ID" },
+        "sourcePhoto": { "type": "string", "description": "Original photo to animate" },
+        "animationPrompt": { "type": "string", "description": "Instruction sent to animators" },
+        "engine": { "type": "string", "description": "Video API agent e.g. runway, Luma, native" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "failed"] },
+        "externalTaskId": { "type": "string", "description": "Runway native task tracking code" },
+        "destVideoUrl": { "type": "string", "description": "Generated output video URL" },
+        "errorLog": { "type": "string", "description": "VFX compiler error reports" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["jobId", "listing_id", "status"]
+    },
+    "AIAnalysis": {
+      "title": "Selo AI Analysis Report",
+      "description": "Product image scans and copy recommendations generated by Gemini",
+      "type": "object",
+      "properties": {
+        "analysisId": { "type": "string", "description": "Unique analysis report key" },
+        "listing_id": { "type": "string", "description": "Linked listing ID" },
+        "detectedLabels": { "type": "array", "description": "Visually scanned items" },
+        "confidence": { "type": "number", "description": "Prediction accuracy fraction" },
+        "suggestedTitle": { "type": "string", "description": "AI formulated copy head" },
+        "suggestedDescription": { "type": "string", "description": "AI optimized listing body" },
+        "suggestedCategory": { "type": "string" },
+        "suggestedPriceZMW": { "type": "number" },
+        "scannedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["analysisId", "listing_id"]
+    },
+    "ViralScore": {
+      "title": "TikTok Viral Score Report",
+      "description": "Visual quality audit scores, weaknesses, and optimization suggestions",
+      "type": "object",
+      "properties": {
+        "scoreId": { "type": "string", "description": "Unique evaluation entry index" },
+        "listing_id": { "type": "string", "description": "Associated listing ID" },
+        "viralScore": { "type": "integer", "description": "Calculated score on a scale of 1-100" },
+        "strengths": { "type": "array", "description": "Identified positive viral components" },
+        "weaknesses": { "type": "array", "description": "Factors dragging reach potential" },
+        "recommendations": { "type": "array", "description": "Recommended layout adjustments" },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["scoreId", "listing_id", "viralScore"]
+    },
+    "FeedInteraction": {
+      "title": "Consumer Feed Interaction Log",
+      "description": "Real-time user feedback telemetry logs used by personalisation engine",
+      "type": "object",
+      "properties": {
+        "event_id": { "type": "string" },
+        "event_type": { "type": "string", "enum": ["view", "like", "share", "skip", "buy", "purchase", "comment", "wishlist", "profile_visit", "pause", "replay", "watch_time"] },
+        "user_id": { "type": "string", "description": "Active consumer token ID" },
+        "listing_id": { "type": "string" },
+        "watch_time_sec": { "type": "number" },
+        "pause_time_sec": { "type": "number" },
+        "comment_text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["event_id", "event_type", "user_id", "listing_id"]
+    },
+    "FeedProfile": {
+      "title": "Shopper Personalisation Segment",
+      "description": "Segment classification based on real-time consumer viewing selections",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Shopper key" },
+        "selectedInterests": { "type": "array", "description": "Explicit selected topics" },
+        "impliedInterests": { "type": "array", "description": "Aurally and visually tracked categories" },
+        "affinityScores": { "type": "object", "description": "Interest category coefficients" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId"]
+    },
+    "WatchHistory": {
+      "title": "Video Playback Watch History",
+      "description": "Historical log tracing content items viewed with precise session timers",
+      "type": "object",
+      "properties": {
+        "historyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "listing_id": { "type": "string" },
+        "totalPlayTimeSec": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "replayed": { "type": "boolean" },
+        "lastWatchedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["historyId", "userId", "listing_id"]
+    },
+    "RecommendationVector": {
+      "title": "Shooper Personalisation Vector",
+      "description": "Mathematically calculated matching array representing video feed weightings",
+      "type": "object",
+      "properties": {
+        "vectorId": { "type": "string" },
+        "userId": { "type": "string" },
+        "weights": { "type": "object", "description": "Category and tags multiplication factors" },
+        "relevanceMatrix": { "type": "array" },
+        "calibratedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["vectorId", "userId"]
+    },
+    "Order": {
+      "title": "Transaction Order Contract",
+      "description": "Escrow-backed physical order logistics ticket",
+      "type": "object",
+      "properties": {
+        "order_id": { "type": "string" },
+        "listing_id": { "type": "string" },
+        "buyer_id": { "type": "string" },
+        "buyer_name": { "type": "string" },
+        "product_title": { "type": "string" },
+        "seller_id": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "product_price": { "type": "number" },
+        "delivery_fee": { "type": "number" },
+        "mobile_money_operator": { "type": "string", "enum": ["Airtel", "MTN", "Zamtel"] },
+        "escrow_status": { "type": "string", "enum": ["locked", "collected", "releasing", "completed", "released", "refunded"] },
+        "transit_status": { "type": "string", "enum": ["pending_seller_confirmation", "rider_assigned", "picked_up", "out_for_delivery", "delivered", "cancelled"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "delivery_address": { "type": "string" },
+        "shipping_address": { "type": "string" },
+        "address_details": { "type": "string" },
+        "cancellation_reason": { "type": "string" },
+        "rider_id": { "type": "string" }
+      },
+      "required": ["order_id", "listing_id", "buyer_id", "seller_id", "escrow_status", "transit_status"]
+    },
+    "Delivery": {
+      "title": "Logistics Dispatch Assignment",
+      "description": "Rider route map and transit tracking notes",
+      "type": "object",
+      "properties": {
+        "deliveryId": { "type": "string" },
+        "order_id": { "type": "string" },
+        "rider_id": { "type": "string" },
+        "rider_name": { "type": "string" },
+        "rider_phone": { "type": "string" },
+        "rider_photo": { "type": "string" },
+        "rider_eta_mins": { "type": "integer" },
+        "distance_km": { "type": "number" },
+        "pickup_distance_km": { "type": "number" },
+        "dropoff_distance_km": { "type": "number" },
+        "total_distance_km": { "type": "number" },
+        "pickup_photo": { "type": "string" },
+        "delivery_photo": { "type": "string" },
+        "transit_status": { "type": "string" },
+        "assignedAt": { "type": "string", "format": "date-time" },
+        "pickedUpAt": { "type": "string", "format": "date-time" },
+        "deliveredAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["deliveryId", "order_id", "rider_id"]
+    },
+    "EscrowAccount": {
+      "title": "Platform Ledger Balance Sheet",
+      "description": "Vault storage holding mobile money reserves for secure payouts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "total_volume_locked_zmw": { "type": "number" },
+        "momo_escrow_holding_zmw": { "type": "number" },
+        "merchant_claimable_balance_zmw": { "type": "number" },
+        "platform_billing_earnings_zmw": { "type": "number" },
+        "social_rider_fund_zmw": { "type": "number" },
+        "last_reconciliation": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id"]
+    },
+    "SellerAnalytics": {
+      "title": "Seller Performance Indicators",
+      "description": "Merchant video performance dashboards",
+      "type": "object",
+      "properties": {
+        "sellerId": { "type": "string" },
+        "overallViews": { "type": "integer" },
+        "overallWatchTimeSec": { "type": "number" },
+        "retentionPercent": { "type": "number" },
+        "totalSalesCount": { "type": "integer" },
+        "sharesCount": { "type": "integer" },
+        "topPerformersList": { "type": "array" },
+        "lastRefreshedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sellerId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Registered buyer, seller, rider, and agents credentials"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Product advertisement reels (matches Listing entity)"
+    },
+    "/videos/{videoId}": {
+      "schema": "Video",
+      "description": "Assembled digital advertisement composite structures"
+    },
+    "/videoJobs/{jobId}": {
+      "schema": "VideoJob",
+      "description": "Video production queuing status"
+    },
+    "/aiAnalysis/{analysisId}": {
+      "schema": "AIAnalysis",
+      "description": "Gemini photo scan recommendations"
+    },
+    "/viralScores/{scoreId}": {
+      "schema": "ViralScore",
+      "description": "Selonachipa Listing Quality scorecard database"
+    },
+    "/feedInteractions/{eventId}": {
+      "schema": "FeedInteraction",
+      "description": "Continuous shopper telemetric interaction stream logs"
+    },
+    "/feedProfiles/{userId}": {
+      "schema": "FeedProfile",
+      "description": "Personalization indices tracked under Infinity Memory"
+    },
+    "/watchHistory/{historyId}": {
+      "schema": "WatchHistory",
+      "description": "Cumulative video viewer historical log"
+    },
+    "/recommendationVectors/{vectorId}": {
+      "schema": "RecommendationVector",
+      "description": "Feed priority matching arrays"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Zambian Mobile Money Escrow orders"
+    },
+    "/deliveries/{deliveryId}": {
+      "schema": "Delivery",
+      "description": "Rider delivery routing metadata"
+    },
+    "/escrowAccounts/{accountId}": {
+      "schema": "EscrowAccount",
+      "description": "Real-time ledger audit summary pools"
+    },
+    "/sellerAnalytics/{sellerId}": {
+      "schema": "SellerAnalytics",
+      "description": "Performance dashboard details for merchants"
+    }
+  }
+}
