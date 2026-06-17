@@ -361,6 +361,8 @@ export default function App() {
   const [hasCompletedRiderSetup, setHasCompletedRiderSetup] = useState<boolean>(false);
 
   // Buyer Onboarding 8-step flow values
+  const [isLookingUpLipilaName, setIsLookingUpLipilaName] = useState<boolean>(false);
+  const [lipilaResolvedName, setLipilaResolvedName] = useState<string>("");
   const [buyerSignupStep, setBuyerSignupStep] = useState<number>(1); // Starts at step 1 by default
   const [buyerPhone, setBuyerPhone] = useState<string>("");
   const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]); // Expanded to 6 digits
@@ -720,25 +722,28 @@ export default function App() {
 
   const handleCartCheckout = (phone: string, operator: "Airtel" | "MTN" | "Zamtel", address: string) => {
     if (!phone || cart.length === 0) return;
-    setIsProcessingCheckout(true);
 
-    setTimeout(() => {
-      const nameCombined = (buyerFirstName ? `${buyerFirstName} ${buyerSurname}`.trim() : "Bupe Mwamba");
+    // Calculate final grand total of cart
+    const uniqueSellers = Array.from(new Set(cart.map(i => i.listing.seller_id))) as string[];
+    const numSellers = uniqueSellers.length;
+    const leg1Distance = numSellers > 1 ? 2.5 : (cart[0]?.listing?.distance_km || 3.4);
+    const leg1Fee = leg1Distance * 5.0; // K 5 per km
+    const leg2Distance = numSellers > 1 ? (cart[1]?.listing?.distance_km || 4.2) : 0;
+    const leg2Fee = leg2Distance * 5.0; // K 5 per km
+    const deliveryFee = leg1Fee + leg2Fee;
+    const itemsSubtot = cart.reduce((ac, it) => ac + (it.listing.suggested_price * it.quantity), 0);
+    const platformFeeVal = parseFloat((itemsSubtot * 0.028).toFixed(2));
+    const tipAmount = checkoutRiderTip;
+    const grandTot = itemsSubtot + deliveryFee + platformFeeVal + tipAmount;
+
+    // Call real Lipila payment collection
+    startLipilaCollection(phone, grandTot, operator, "Avec Selonachipa Multi-Vendor Escrow Cart Checkout", () => {
+      const nameCombined = lookupName || (buyerFirstName ? `${buyerFirstName} ${buyerSurname}`.trim() : "Bupe Mwamba");
       const finalAddress = address || (buyerNeighbourhood ? `${buyerNeighbourhood}, ${buyerSelectedCity}` : "Munali, Lusaka");
-
-      const uniqueSellers = Array.from(new Set(cart.map(i => i.listing.seller_id))) as string[];
-      const numSellers = uniqueSellers.length;
-      const leg1Distance = numSellers > 1 ? 2.5 : (cart[0]?.listing?.distance_km || 3.4);
-      const leg1Fee = leg1Distance * 5.0; // K 5 per km
-      const leg2Distance = numSellers > 1 ? (cart[1]?.listing?.distance_km || 4.2) : 0;
-      const leg2Fee = leg2Distance * 5.0; // K 5 per km
-      const deliveryFee = leg1Fee + leg2Fee;
 
       const generatedOrders: Order[] = [];
       const generatedLedgers: LedgerRecord[] = [];
       let totalPurchaseCost = 0;
-
-      const tipAmount = checkoutRiderTip;
 
       cart.forEach((item, idx) => {
         const orderId = "ord-" + Math.floor(10000 + Math.random() * 90000);
@@ -767,7 +772,7 @@ export default function App() {
         };
 
         const escrowMMFee = parseFloat((itemCost * 0.015).toFixed(2));
-        const platformFeeVal = 2.00;
+        const platformFeeValSec = 2.00;
         const socialFundCut = 4.00;
 
         const newLedgerReceipt: LedgerRecord = {
@@ -779,7 +784,7 @@ export default function App() {
           timestamp: new Date().toISOString(),
           fees: {
             escrow_mobile_money: escrowMMFee,
-            platform_listing: platformFeeVal,
+            platform_listing: platformFeeValSec,
             rider_share: (isMainDeliveryOrder ? (deliveryFee - 2.0 + orderTip) : 0),
             social_fund: socialFundCut,
             platform_rider_commission: 2.00
@@ -805,14 +810,13 @@ export default function App() {
       setCart([]);
       setCheckoutRiderTip(0);
       setCustomTipValue("");
-      setIsProcessingCheckout(false);
       setBuyerFeedTab("TRACKING");
 
       setToast({
-        message: `ESCROW SEALED: K${(totalPurchaseCost + deliveryFee + tipAmount).toFixed(2)} Secured`,
-        subText: `Paid via ${operator} Mobile Money (including Rider Tip K ${tipAmount.toFixed(2)}). Redirected to Order Tracking!`
+        message: `ESCROW SEALED: K${grandTot.toFixed(2)} Secured`,
+        subText: `Paid via ${operator} Mobile Money. Funds successfully locked in Selonachipa Escrow after Lipila validation!`
       });
-    }, 2000);
+    });
   };
 
   const handleAddPostDeliveryRiderTip = (orderId: string, tipAmount: number) => {
@@ -919,6 +923,144 @@ export default function App() {
   const [checkoutRiderTip, setCheckoutRiderTip] = useState<number>(0);
   const [customTipValue, setCustomTipValue] = useState<string>("");
   const [postDeliveryTipValue, setPostDeliveryTipValue] = useState<{[orderId: string]: string}>({});
+
+  // Lipila verification & collection states
+  const [lookupName, setLookupName] = useState<string>("");
+  const [isLookingUpName, setIsLookingUpName] = useState<boolean>(false);
+  const [lipilaStep, setLipilaStep] = useState<"IDLE" | "INITIATING" | "WAITING_FOR_PIN" | "SUCCESS" | "FAILED">("IDLE");
+  const [lipilaStatusMsg, setLipilaStatusMsg] = useState<string>("");
+  const [lipilaRefId, setLipilaRefId] = useState<string>("");
+  const [lipilaAmount, setLipilaAmount] = useState<number>(0);
+  const [lipilaPhone, setLipilaPhone] = useState<string>("");
+  const [lipilaOperator, setLipilaOperator] = useState<string>("");
+
+  // Auto fetch / look up subscriber name when phone and operator is entered
+  useEffect(() => {
+    const phoneDigits = checkoutPhone.replace(/[^0-9]/g, "");
+
+    // Dynamically change operator network based on prefix
+    let prefixCheck = phoneDigits;
+    if (prefixCheck.startsWith("260")) {
+      prefixCheck = prefixCheck.substring(3);
+    }
+    if (prefixCheck.startsWith("0")) {
+      prefixCheck = prefixCheck.substring(1);
+    }
+    if (prefixCheck.startsWith("97") || prefixCheck.startsWith("77")) {
+      setCheckoutOperator("Airtel");
+    } else if (prefixCheck.startsWith("96") || prefixCheck.startsWith("76")) {
+      setCheckoutOperator("MTN");
+    } else if (prefixCheck.startsWith("95") || prefixCheck.startsWith("75")) {
+      setCheckoutOperator("Zamtel");
+    }
+
+    if (phoneDigits.length >= 9) {
+      setIsLookingUpName(true);
+      const timer = setTimeout(() => {
+        fetch(`/api/lipila/lookup-name?phone=${encodeURIComponent(checkoutPhone)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.name) {
+              setLookupName(data.name);
+            }
+          })
+          .catch(err => {
+            console.error("Name lookup error:", err);
+          })
+          .finally(() => {
+            setIsLookingUpName(false);
+          });
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setLookupName("");
+    }
+  }, [checkoutPhone]);
+
+  // Main background collection handler with auto-pushed PIN verification and polling status
+  const startLipilaCollection = (phone: string, amount: number, operator: string, narration: string, onSuccessCallback: () => void) => {
+    setIsProcessingCheckout(true);
+    setLipilaStep("INITIATING");
+    setLipilaPhone(phone);
+    setLipilaAmount(amount);
+    setLipilaOperator(operator);
+    setLipilaStatusMsg("Connecting to Selonachipa secure servers...");
+
+    fetch("/api/lipila/collect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, amount, operator, narration })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.referenceId) {
+          setLipilaRefId(data.referenceId);
+          setLipilaStep("WAITING_FOR_PIN");
+          setLipilaStatusMsg(`📨 A mobile money PIN pop-up was dispatched to your device trailing ${operator}. Please enter your secret PIN immediately to authorize the K${amount.toFixed(2)} escrow lock.`);
+
+          // Poll every 2 seconds for authorization status checks (up to 60 seconds)
+          let attempts = 0;
+          const maxAttempts = 30; // 30 * 2 seconds = 60s timeout
+          const pollInterval = setInterval(() => {
+            attempts++;
+            if (attempts > maxAttempts) {
+              clearInterval(pollInterval);
+              setLipilaStep("FAILED");
+              setLipilaStatusMsg("⏱️ Authorization Timeout: Telecommunication networks could not receive authorization within 60s. Please try again.");
+              setIsProcessingCheckout(false);
+              return;
+            }
+
+            fetch(`/api/lipila/check-status?referenceId=${encodeURIComponent(data.referenceId)}`)
+              .then(resStatus => resStatus.json())
+              .then(statusData => {
+                // Check if payment was confirmed as Successful
+                if (statusData.status === "Successful" || statusData.status === "Success" || statusData.paymentStatus === "Successful") {
+                  clearInterval(pollInterval);
+                  setLipilaStep("SUCCESS");
+                  setLipilaStatusMsg("🔒 Lipila payment confirmed! Locking funds in Selonachipa Escrow account...");
+                  
+                  // Run callback automatically to create order/ledger and clear cart without click of a button!
+                  onSuccessCallback();
+                  
+                  setTimeout(() => {
+                    setLipilaStep("IDLE");
+                    setIsProcessingCheckout(false);
+                  }, 2500);
+                } 
+                // If payment state failed (wrong pin, user cancelled, insufficient balance, etc.)
+                else if (statusData.status === "Failed" || statusData.paymentStatus === "Failed") {
+                  clearInterval(pollInterval);
+                  setLipilaStep("FAILED");
+                  
+                  let failReason = statusData.message || statusData.statusMessage || "Transaction declined / expired.";
+                  if (failReason.includes("LOW_BALANCE") || failReason.includes("BALANCE_INSUFFICIENT")) {
+                    failReason = "Your Mobile Money account balance is insufficient to complete this order.";
+                  } else if (failReason.toLowerCase().includes("pin") || failReason.toLowerCase().includes("cancelled") || failReason.toLowerCase().includes("canceled")) {
+                    failReason = "PIN authorization failed: user either entered wrong PIN or canceled prompt.";
+                  }
+                  
+                  setLipilaStatusMsg(`❌ Payment Failed: ${failReason}`);
+                  setIsProcessingCheckout(false);
+                }
+              })
+              .catch(err => {
+                console.warn("Lipila status check network warning:", err);
+              });
+          }, 2000);
+        } else {
+          setLipilaStep("FAILED");
+          setLipilaStatusMsg(`❌ Collection Error: ${data.message || "Failed to prompt your operator."}`);
+          setIsProcessingCheckout(false);
+        }
+      })
+      .catch(err => {
+        console.error("Lipila network collect error:", err);
+        setLipilaStep("FAILED");
+        setLipilaStatusMsg("❌ Network connection failed. Please ensure your Selonachipa workspace server is of perfect integrity.");
+        setIsProcessingCheckout(false);
+      });
+  };
 
   // Seller Listing Upload
   const [uploadTitle, setUploadTitle] = useState<string>("");
@@ -1066,17 +1208,16 @@ export default function App() {
   // Dynamic state syncing helper functions
   const handlePurchase = () => {
     if (!checkoutPhone) return;
-    setIsProcessingCheckout(true);
     
-    setTimeout(() => {
-      const activeListing = getPersonalizedListings()[currentReelIndex];
-      const deliveryFee = 15;
-      const tipAmount = checkoutRiderTip;
-      const totalCost = (activeListing.suggested_price * checkoutQty) + deliveryFee + tipAmount;
-      const orderId = makeOrdId();
+    const activeListing = getPersonalizedListings()[currentReelIndex];
+    const deliveryFee = 15;
+    const tipAmount = checkoutRiderTip;
+    const totalCost = (activeListing.suggested_price * checkoutQty) + deliveryFee + tipAmount;
 
-      // Create new Order
-      const nameCombined = (buyerFirstName ? `${buyerFirstName} ${buyerSurname}`.trim() : "Bupe Mwamba");
+    // Call real Lipila payment collection
+    startLipilaCollection(checkoutPhone, totalCost, checkoutOperator, `Selonachipa Buy Direct: ${activeListing.title}`, () => {
+      const orderId = makeOrdId();
+      const nameCombined = lookupName || (buyerFirstName ? `${buyerFirstName} ${buyerSurname}`.trim() : "Bupe Mwamba");
       const finalAddress = customCheckoutAddress || (buyerNeighbourhood ? `${buyerNeighbourhood}, ${buyerSelectedCity}` : "Munali, Lusaka");
 
       const newOrder: Order = {
@@ -1130,14 +1271,13 @@ export default function App() {
       
       setCheckoutRiderTip(0);
       setCustomTipValue("");
-      setIsProcessingCheckout(false);
       setIsBuyModalOpen(false);
       
       setToast({
         message: `ESCROW SEALED: K${totalCost.toFixed(2)} Secured`,
-        subText: `Transaction registered with Zambia MoMo regulatory protocol (including Rider Tip K ${tipAmount.toFixed(2)}) under hash ${newLedgerReceipt.tx_id}. Redirected to Order Tracking!`
+        subText: `Paid via ${checkoutOperator} Mobile Money. Funds successfully secured in Selonachipa Escrow after Lipila validation!`
       });
-    }, 2000);
+    });
   };
 
   // Skip step setup configs
@@ -1380,6 +1520,130 @@ export default function App() {
         {/* SCREEN CANVAS WRAPPER */}
         <div className={`w-full h-full bg-[#050506] rounded-[38px] overflow-hidden relative flex flex-col justify-between select-none transition-all duration-300 ${isLightTheme ? "theme-light-active" : ""}`}>
           
+          {/* LIPILA REAL TIME PAYMENT GATEWAY OVERLAY */}
+          <AnimatePresence>
+            {lipilaStep !== "IDLE" && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/95 z-55 flex flex-col items-center justify-center p-6 text-center font-sans rounded-[38px]"
+              >
+                <div className="w-full max-w-xs space-y-6">
+                  
+                  {/* Header */}
+                  <div className="space-y-1 mt-4">
+                    <div className="flex items-center justify-center gap-1.5 text-purple-400 font-mono tracking-widest uppercase font-extrabold text-[9.5px]">
+                      <Lock className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Selonachipa Escrow-Lock</span>
+                    </div>
+                    <h3 className="text-base font-black text-white">Lipila Mobile Checkout</h3>
+                    <p className="text-zinc-500 text-[10px]">Verbid-Secured Escrow Collection Protocol</p>
+                  </div>
+
+                  {/* Large visual status indicator */}
+                  <div className="relative py-2 flex items-center justify-center">
+                    {lipilaStep === "INITIATING" && (
+                      <div className="p-4 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 animate-pulse">
+                        <RefreshCw className="w-8 h-8 animate-spin" />
+                      </div>
+                    )}
+                    {lipilaStep === "WAITING_FOR_PIN" && (
+                      <div className="relative">
+                        <div className="p-5 rounded-full bg-amber-500/10 border border-amber-500/35 text-amber-400 animate-bounce">
+                          <Smartphone className="w-9 h-9" />
+                        </div>
+                        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center animate-ping">
+                          !
+                        </div>
+                      </div>
+                    )}
+                    {lipilaStep === "SUCCESS" && (
+                      <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/35 text-emerald-400 scale-110 duration-500">
+                        <CheckCircle2 className="w-8 h-8" />
+                      </div>
+                    )}
+                    {lipilaStep === "FAILED" && (
+                      <div className="p-4 rounded-full bg-rose-500/10 border border-rose-500/35 text-rose-400 scale-100">
+                        <AlertTriangle className="w-8 h-8 animate-pulse" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Live metadata overview box */}
+                  <div className="bg-[#0b0c10] border border-zinc-850 rounded-2xl p-4 text-left font-mono text-xs space-y-2 text-zinc-400">
+                    <div className="flex justify-between">
+                      <span>Subscriber Name:</span>
+                      <span className="text-white font-extrabold truncate max-w-[130px]">{lookupName || "Resolving name..."}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>ZM Carrier:</span>
+                      <span className="text-white font-bold">{lipilaOperator} Money</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Carrier Wallet:</span>
+                      <span className="text-white font-bold">{lipilaPhone}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-zinc-850 pt-2 text-[#ffa500] font-extrabold">
+                      <span>Order Amount:</span>
+                      <span>K {lipilaAmount.toFixed(2)} ZMW</span>
+                    </div>
+                    {lipilaRefId && (
+                      <div className="flex justify-between text-[10px] text-zinc-500 pt-1">
+                        <span>Lipila ID:</span>
+                        <span className="font-sans select-all">{lipilaRefId}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status Message Text */}
+                  <div className="px-3 text-xs font-sans text-zinc-300 leading-relaxed min-h-[50px] flex items-center justify-center">
+                    {lipilaStatusMsg}
+                  </div>
+
+                  {/* Waiting animation bar */}
+                  {lipilaStep === "WAITING_FOR_PIN" && (
+                    <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
+                      <div className="bg-amber-400 h-full w-2/3 rounded-full animate-pulse mx-auto"></div>
+                    </div>
+                  )}
+
+                  {/* Actions & Dialog dismission */}
+                  <div className="pt-2">
+                    {lipilaStep === "FAILED" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLipilaStep("IDLE");
+                          setIsProcessingCheckout(false);
+                        }}
+                        className="w-full bg-rose-600 hover:bg-rose-750 text-white font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                      >
+                        Dismiss & Retry
+                      </button>
+                    ) : lipilaStep === "SUCCESS" ? (
+                      <div className="text-emerald-400 text-xs font-extrabold py-2 border border-emerald-500/20 rounded-xl bg-emerald-500/5">
+                        ✓ Secured in Escrow
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLipilaStep("IDLE");
+                          setIsProcessingCheckout(false);
+                        }}
+                        className="text-[10px] text-zinc-500 hover:text-zinc-400 underline cursor-pointer"
+                      >
+                        Decline transaction payment
+                      </button>
+                    )}
+                  </div>
+
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Rider Delivery Star Rating Modal */}
           <AnimatePresence>
             {ratingOrder && (
@@ -1492,8 +1756,8 @@ export default function App() {
           {/* RENDER VIEW: NOT SIGNED IN (ROLE SETUP HOME SCREEN) */}
           <AnimatePresence mode="wait">
             {!isLoggedIn ? (
-              selectedRole === "BUYER" && buyerSignupStep > 0 ? (
-                // BUYER SIGNUP EXPERIENCE (6 STEPS)
+              buyerSignupStep > 0 ? (
+                // UNIFIED SIGNUP & LOGIN EXPERIENCE FOR ALL ROLE GROUPS
                 <motion.div 
                   key="buyer-signup-stepper"
                   initial={{ opacity: 0, scale: 0.95 }}
@@ -1519,8 +1783,10 @@ export default function App() {
 
                   {/* HEADER SYSTEM */}
                   <div className="flex justify-between items-center text-[10px] font-bold text-zinc-500 tracking-wider">
-                    <span>SELONACHIPA BUYER</span>
-                    <span className="font-mono text-blue-500">STEP {buyerSignupStep} OF 8</span>
+                    <span>SELONACHIPA {selectedRole} PORTAL</span>
+                    <span className="font-mono text-blue-500">
+                      {isBuyerLoginMode ? "SECURED LOGIN" : `STEP ${buyerSignupStep} OF ${selectedRole === "BUYER" ? 7 : 4}`}
+                    </span>
                   </div>
 
                   {/* ACTIVE STEP SELECTOR */}
@@ -1688,19 +1954,104 @@ export default function App() {
                                   });
                                   return;
                                 }
-                                if (loginPinInput.trim() !== buyerPinCode) {
+                                if (loginPinInput.trim().length < 4) {
                                   setToast({
-                                    message: "Access Denied",
-                                    subText: "Invalid PIN code. Please try again or use recovery."
+                                    message: "Invalid PIN Code",
+                                    subText: "Your secure login PIN must be exactly 4 digits."
                                   });
                                   return;
                                 }
-                                setBuyerPhone(loginPhoneInput);
-                                setCheckoutPhone("0" + loginPhoneInput);
+
+                                const cleanPhone = loginPhoneInput.replace(/^(\+260|260|0)/, "");
+                                const localAccounts = localStorage.getItem("selo_registered_accounts") 
+                                  ? JSON.parse(localStorage.getItem("selo_registered_accounts")!) 
+                                  : [];
+                                
+                                const foundLocal = localAccounts.find((acc: any) => {
+                                  const accClean = acc.phone.replace(/^(\+260|260|0)/, "");
+                                  return accClean === cleanPhone && acc.role === selectedRole;
+                                });
+
+                                let authenticatedAccount: any = null;
+                                let authError = "";
+
+                                if (foundLocal) {
+                                  if (foundLocal.pin === loginPinInput) {
+                                    authenticatedAccount = foundLocal;
+                                  } else {
+                                    authError = "Incorrect PIN code. Please try again or use recovery backup.";
+                                  }
+                                } else {
+                                  if (selectedRole === "BUYER") {
+                                    if ((cleanPhone === "971122334" || cleanPhone === "971122335" || cleanPhone === "771122334") && loginPinInput === "1234") {
+                                      authenticatedAccount = { name: "Clara Mwamba", phone: cleanPhone, role: "BUYER", pin: "1234" };
+                                    }
+                                  } else if (selectedRole === "SELLER") {
+                                    if ((cleanPhone === "975619280" || cleanPhone === "97561928") && loginPinInput === "2580") {
+                                      authenticatedAccount = { name: "Chipo Mwansa", phone: cleanPhone, role: "SELLER", pin: "2580", storeName: "Chisamba Organic Trade Hub", landmark: "Plot 33, Great East Road Near Cooperative Block, Chisamba, ZM" };
+                                    }
+                                  } else if (selectedRole === "AGENT") {
+                                    if (cleanPhone === "972233445" && loginPinInput === "1357") {
+                                      authenticatedAccount = { name: "Bupe Phiri", phone: cleanPhone, role: "AGENT", pin: "1357", agencyName: "Bupe & Sons Trade Agency" };
+                                    }
+                                  } else if (selectedRole === "RIDER") {
+                                    if ((cleanPhone === "971122334" || cleanPhone === "971203040") && loginPinInput === "0852") {
+                                      authenticatedAccount = { name: "Chanda Runner", phone: cleanPhone, role: "RIDER", pin: "0852", vehicleType: "Motorcycle" };
+                                    }
+                                  }
+
+                                  if (!authenticatedAccount && !authError) {
+                                    authError = "This mobile number is not registered as a " + selectedRole + ". Change to 'Register' or check input.";
+                                  }
+                                }
+
+                                if (authError) {
+                                  setToast({
+                                    message: "Access Denied",
+                                    subText: authError
+                                  });
+                                  return;
+                                }
+
+                                if (selectedRole === "BUYER") {
+                                  setBuyerPhone(cleanPhone);
+                                  setCheckoutPhone("0" + cleanPhone);
+                                  
+                                  let cleanOpVal = cleanPhone;
+                                  if (cleanOpVal.startsWith("0")) {
+                                    cleanOpVal = cleanOpVal.substring(1);
+                                  }
+                                  let detectedOp: "Airtel" | "MTN" | "Zamtel" = "Airtel";
+                                  if (cleanOpVal.startsWith("97") || cleanOpVal.startsWith("77")) {
+                                    detectedOp = "Airtel";
+                                  } else if (cleanOpVal.startsWith("96") || cleanOpVal.startsWith("76")) {
+                                    detectedOp = "MTN";
+                                  } else if (cleanOpVal.startsWith("95") || cleanOpVal.startsWith("75")) {
+                                    detectedOp = "Zamtel";
+                                  }
+                                  setBuyerOperator(detectedOp);
+                                  setCheckoutOperator(detectedOp);
+
+                                  setBuyerNameInput(authenticatedAccount.name);
+                                  const parts = authenticatedAccount.name.split(" ");
+                                  setBuyerFirstName(parts[0] || "");
+                                  setBuyerSurname(parts.slice(1).join(" ") || "");
+                                } else if (selectedRole === "SELLER") {
+                                  setSellerName(authenticatedAccount.name);
+                                  setSellerStoreName(authenticatedAccount.storeName || `${authenticatedAccount.name}'s Shop`);
+                                  if (authenticatedAccount.landmark) {
+                                    setSellerLocationLandmark(authenticatedAccount.landmark);
+                                  }
+                                } else if (selectedRole === "AGENT") {
+                                  // Default active simulation settings
+                                } else if (selectedRole === "RIDER") {
+                                  // Default active simulation settings
+                                }
+
                                 setIsLoggedIn(true);
                                 setToast({
-                                  message: "Welcome Back to Selonachipa!",
-                                  subText: "Buyer network credentials authenticated cleanly."
+                                  message: `Welcome Back, ${authenticatedAccount.name}!`,
+                                  subText: `SeloNaChipa ${selectedRole} session authenticated.`
                                 });
                               }}
                               className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-colors"
@@ -1772,33 +2123,43 @@ export default function App() {
                       // STANDARD MULTI-STEP SIGNUP ENGINE
                       <>
                         {buyerSignupStep === 1 && (
-                          <div className="space-y-6">
-                            {/* Logo Symbol */}
+                          <div className="space-y-4 text-left">
+                            {/* Logo Row */}
                             <div className="flex flex-col items-center text-center">
-                              <div className="w-[72px] h-[72px] bg-blue-600/10 border border-blue-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/5 mb-4 shrink-0">
-                                <ShoppingBag className="w-10 h-10 text-blue-500 stroke-[2.5]" />
+                              <div className="w-[64px] h-[64px] bg-blue-600/10 border border-blue-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/5 mb-3 shrink-0">
+                                <ShoppingBag className="w-8 h-8 text-blue-500 stroke-[2.5]" />
                               </div>
                               
-                              <h1 className="text-2xl font-extrabold tracking-tight text-white font-sans sm:text-3xl">
+                              <h1 className="text-xl font-extrabold tracking-tight text-white font-sans">
                                 Welcome to Selonachipa
                               </h1>
-                              <p className="text-[11.5px] text-zinc-400 font-medium leading-relaxed mt-2 max-w-[280px]">
-                                Fresh produce, fashion, electronics — delivered to you across Zambia.
+                              <p className="text-[11.5px] text-zinc-400 font-medium leading-relaxed mt-1 max-w-[280px]">
+                                Fresh produce, fashion, dry foods — delivered to you across Zambia.
                               </p>
                             </div>
 
+                            {/* Warning Indicator */}
+                            <div className="bg-red-950/40 border border-red-500/20 p-3.5 rounded-xl text-left text-xs my-2">
+                              <div className="flex items-start gap-2.5">
+                                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                                <div className="space-y-0.5">
+                                  <p className="font-extrabold text-red-200">National SIM Registration Warning</p>
+                                  <p className="text-[10px] text-zinc-300 leading-normal font-sans">
+                                    Under Zambian law, you must register using a phone registered in your actual <strong>legal name</strong> as held by Telcos and linked to your Mobile Money collection account.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
                             {/* Mobile Number Entry Container */}
-                            <div className="space-y-2 text-left">
-                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1">
-                                Mobile Number
+                            <div className="space-y-1.5 text-left">
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">
+                                Mobile Money Number
                               </label>
                               <div className="flex gap-2">
-                                {/* Fixed +260 country code box on the left */}
-                                <div className="w-16 h-12 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center font-bold text-zinc-300 text-sm select-none shrink-0 shadow-inner">
+                                <div className="w-16 h-11 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center font-bold text-zinc-300 text-sm select-none shrink-0 shadow-inner">
                                   +260
                                 </div>
-                                
-                                {/* Free entry field on the right */}
                                 <input
                                   type="tel"
                                   maxLength={9}
@@ -1806,113 +2167,173 @@ export default function App() {
                                   onChange={(e) => {
                                     const val = e.target.value.replace(/\D/g, "");
                                     setBuyerPhone(val);
+                                    let cleanVal = val;
+                                    if (cleanVal.startsWith("0")) {
+                                      cleanVal = cleanVal.substring(1);
+                                    }
+                                    if (cleanVal.startsWith("97") || cleanVal.startsWith("77")) {
+                                      setBuyerOperator("Airtel");
+                                    } else if (cleanVal.startsWith("96") || cleanVal.startsWith("76")) {
+                                      setBuyerOperator("MTN");
+                                    } else if (cleanVal.startsWith("95") || cleanVal.startsWith("75")) {
+                                      setBuyerOperator("Zamtel");
+                                    }
                                   }}
                                   placeholder="97X XXX XXX"
-                                  className="flex-grow h-12 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-white text-sm font-mono focus:border-blue-500 focus:outline-none transition-all shadow-inner placeholder:text-zinc-650"
+                                  className="flex-grow h-11 bg-zinc-900 border border-zinc-805 rounded-xl px-4 text-white text-sm font-mono focus:border-blue-500 focus:outline-none transition-all shadow-inner placeholder:text-zinc-650"
                                 />
                               </div>
-
-                              {/* Hint line indicating carriers */}
-                              <p className="text-[10px] text-zinc-500 leading-normal font-medium flex items-center gap-1.5 pt-1">
-                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
-                                <span>Airtel, MTN, or Zamtel · used for OTP & checkout</span>
-                              </p>
                             </div>
 
-                            {/* Send OTP button */}
-                            <div className="pt-2">
+                            {/* Operator Selector */}
+                            <div className="text-left space-y-1">
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest leading-none">
+                                Operator Network
+                              </label>
+                              <div className="grid grid-cols-3 gap-2">
+                                {(["Airtel", "MTN", "Zamtel"] as const).map(op => (
+                                  <button
+                                    key={op}
+                                    type="button"
+                                    onClick={() => setBuyerOperator(op)}
+                                    className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                                      buyerOperator === op
+                                        ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                                        : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                                    }`}
+                                  >
+                                    {op}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Step A: Lipila Auto-resolved SIM Name Inquiry */}
+                            <div className="pt-1.5">
+                              <motion.button
+                                whileHover={{ scale: 1.01 }}
+                                whileTap={{ scale: 0.98 }}
+                                type="button"
+                                onClick={() => {
+                                  if (buyerPhone.trim().length < 9) {
+                                    setToast({
+                                      message: "Lookup Ineligible",
+                                      subText: "Please enter your full 9-digit Zambian mobile money number."
+                                    });
+                                    return;
+                                  }
+                                  setIsLookingUpLipilaName(true);
+                                  fetch(`/api/lipila/lookup-name?phone=${buyerPhone}`)
+                                    .then(res => res.json())
+                                    .then(data => {
+                                      setIsLookingUpLipilaName(false);
+                                      if (data.name) {
+                                        setLipilaResolvedName(data.name);
+                                        const names = data.name.trim().split(" ");
+                                        setBuyerFirstName(names[0] || "");
+                                        setBuyerSurname(names.slice(1).join(" ") || "");
+                                        setToast({
+                                          message: "SIM Registry Resolved ✓",
+                                          subText: `Verified Subscriber: "${data.name}" via Lipila Name Inquiry.`
+                                        });
+                                      } else {
+                                        setToast({
+                                          message: "SIM Search Failure",
+                                          subText: "Could not retrieve lookup value from server. Please type manually."
+                                        });
+                                      }
+                                    })
+                                    .catch(err => {
+                                      setIsLookingUpLipilaName(false);
+                                      setToast({
+                                        message: "API Search Timeout",
+                                        subText: "Network congestion, utilizing pre-configured SIM registration directories."
+                                      });
+                                    });
+                                }}
+                                disabled={isLookingUpLipilaName}
+                                className="w-full bg-blue-600/10 border border-blue-500/35 text-blue-400 hover:bg-blue-600/20 text-xs font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                              >
+                                {isLookingUpLipilaName ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                                    <span>Contacting Sim Directory Authorities...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>Verify Subscriber Name with Lipila API</span>
+                                    <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  </>
+                                )}
+                              </motion.button>
+                            </div>
+
+                            {/* Subscriber Form Fields */}
+                            <div className="grid grid-cols-2 gap-3 text-left">
+                              <div>
+                                <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1 flex items-center gap-1">
+                                  <span>First Name</span>
+                                  {lipilaResolvedName && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={buyerFirstName}
+                                  onChange={(e) => setBuyerFirstName(e.target.value)}
+                                  placeholder="Auto-populated"
+                                  className={`w-full h-10 bg-zinc-900 border rounded-xl px-3 text-white text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all ${
+                                    lipilaResolvedName ? "border-emerald-500/50 bg-emerald-950/10 text-emerald-300 font-bold" : "border-zinc-800"
+                                  }`}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9.5px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1 flex items-center gap-1">
+                                  <span>Surname</span>
+                                  {lipilaResolvedName && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={buyerSurname}
+                                  onChange={(e) => setBuyerSurname(e.target.value)}
+                                  placeholder="Auto-populated"
+                                  className={`w-full h-10 bg-zinc-900 border rounded-xl px-3 text-white text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all ${
+                                    lipilaResolvedName ? "border-emerald-500/50 bg-emerald-950/10 text-emerald-300 font-bold" : "border-zinc-800"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+
+                            {lipilaResolvedName && (
+                              <p className="text-[10px] text-emerald-400 text-left bg-emerald-950/20 border border-emerald-500/10 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+                                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <span>SIM verified name matches mobile money registry profile.</span>
+                              </p>
+                            )}
+
+                            {/* Continue Buttons */}
+                            <div className="pt-2 w-full">
                               <motion.button
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.98 }}
                                 onClick={() => {
                                   if (buyerPhone.trim().length < 9) {
-                                    setToast({
-                                      message: "Verification Ineligible",
-                                      subText: "Please enter your full 9-digit mobile carrier number."
-                                    });
+                                    setToast({ message: "Mobile Missing", subText: "Please enter your carrier number." });
                                     return;
                                   }
-                                  setIsSendingOtp(true);
-                                  setTimeout(() => {
-                                    setIsSendingOtp(false);
-                                    setOtpDigits(["", "", "", "", "", ""]); // Reset 6-digits OTP
-                                    setOtpCountdown(28); // Initialize resend timer to 28s
-                                    setBuyerSignupStep(2);
-                                    setToast({
-                                      message: "OTP Code Dispatched",
-                                      subText: `Authentication message delivered successfully to +260 ${buyerPhone}`
-                                    });
-                                  }, 1200);
+                                  if (!buyerFirstName.trim()) {
+                                    setToast({ message: "Verification Required", subText: "Please verify subscriber name via Lipila inquiry before advancing." });
+                                    return;
+                                  }
+                                  setBuyerSignupStep(2);
                                 }}
-                                disabled={isSendingOtp}
-                                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50 h-11"
+                                className="w-full bg-[#ffa500] hover:bg-amber-500 text-black text-xs font-bold py-3 rounded-xl shadow-lg mt-1 flex items-center justify-center gap-1.5 cursor-pointer h-10"
                               >
-                                {isSendingOtp ? (
-                                  <>
-                                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                                    <span>Sending OTP...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span>Send OTP</span>
-                                    <ArrowRight className="w-4 h-4 stroke-[2.5]" />
-                                  </>
-                                )}
+                                <span>Next: Setup Secure PIN →</span>
                               </motion.button>
-
-                              {/* Divider */}
-                              <div className="flex items-center gap-3 my-4">
-                                <div className="flex-1 h-px bg-zinc-900"></div>
-                                <span className="text-[9.5px] text-zinc-500 uppercase tracking-widest font-extrabold shrink-0">or continue with</span>
-                                <div className="flex-1 h-px bg-zinc-900"></div>
-                              </div>
-
-                              {/* Social logins */}
-                              <div className="grid grid-cols-2 gap-3.5 mb-4">
-                                <button 
-                                  onClick={() => {
-                                    setBuyerPhone("971122334");
-                                    setBuyerNameInput("Google Sandbox Guest");
-                                    setIsLoggedIn(true);
-                                    setToast({
-                                      message: "Google Social Match Verified",
-                                      subText: "Sandbox authentication active. Welcome Google Guest."
-                                    });
-                                  }}
-                                  className="flex items-center justify-center gap-2 border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 py-2.5 rounded-xl text-[10.5px] font-bold text-zinc-300 hover:text-white transition-all cursor-pointer h-10 shrink-0"
-                                >
-                                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
-                                    <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114A5.29 5.29 0 0 1 8.7 13.2a5.29 5.29 0 0 1 8.7 13.2a5.29 5.29 0 0 1-5.29-5.314c1.28 0 2.41.48 3.284 1.28l3.12-3.12A9.23 9.23 0 0 0 13.99 3.6 9.6 9.6 0 0 0 4.4 13.2a9.6 9.6 0 0 0 9.59 9.6c5.558 0 9.59-3.9 9.59-9.6a8.88 8.88 0 0 0-.18-1.915H12.24Z"/>
-                                  </svg>
-                                  <span>Google</span>
-                                </button>
-                                
-                                <button 
-                                  onClick={() => {
-                                    setBuyerPhone("965544332");
-                                    setBuyerNameInput("Facebook Sandbox Guest");
-                                    setIsLoggedIn(true);
-                                    setToast({
-                                      message: "Facebook Mutual Match Verified",
-                                      subText: "Sandbox authentication active. Welcome Facebook Guest."
-                                    });
-                                  }}
-                                  className="flex items-center justify-center gap-2 border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 py-2.5 rounded-xl text-[10.5px] font-bold text-zinc-300 hover:text-white transition-all cursor-pointer h-10 shrink-0"
-                                >
-                                  <svg className="w-3.5 h-3.5 text-[#1877F2] fill-current" viewBox="0 0 24 24">
-                                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                                  </svg>
-                                  <span>Facebook</span>
-                                </button>
-                              </div>
-
+                              
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setIsBuyerLoginMode(true);
-                                  setLoginPhoneInput(buyerPhone);
-                                }}
-                                className="w-full text-center text-zinc-500 hover:text-zinc-400 py-1 text-xs font-bold transition-all block"
+                                onClick={() => setIsBuyerLoginMode(true)}
+                                className="w-full text-center text-zinc-500 hover:text-zinc-400 py-2.5 text-xs font-bold transition-all block mt-2"
                               >
                                 Already have an account? Log In
                               </button>
@@ -1921,123 +2342,6 @@ export default function App() {
                         )}
 
                         {buyerSignupStep === 2 && (
-                          <div className="space-y-5 flex flex-col items-center">
-                            <div className="w-[64px] h-[64px] bg-blue-600/10 border border-blue-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/5 mb-1 shrink-0">
-                              <Lock className="w-8 h-8 text-blue-500 stroke-[2.5]" />
-                            </div>
-                            
-                            <div className="text-center">
-                              <h2 className="text-xl font-extrabold text-white">Verify your number</h2>
-                              <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed max-w-[270px] mx-auto">
-                                We've sent a 6-digit verification code via your network (Airtel, MTN, or Zamtel) to +260 <span className="text-zinc-200 font-bold">{buyerPhone}</span>.
-                              </p>
-                            </div>
-
-                            {/* 6 Individual input boxes */}
-                            <div className="flex gap-1.5 justify-center py-2 shrink-0">
-                              {[0, 1, 2, 3, 4, 5].map(idx => {
-                                const isFilled = otpDigits[idx] !== "";
-                                return (
-                                  <input
-                                    key={idx}
-                                    id={`otp-box-${idx}`}
-                                    type="tel"
-                                    maxLength={1}
-                                    value={otpDigits[idx]}
-                                    onChange={(e) => {
-                                      const val = e.target.value.replace(/\D/g, "");
-                                      const nOpts = [...otpDigits];
-                                      nOpts[idx] = val;
-                                      setOtpDigits(nOpts);
-                                      // Auto-focus next box forward
-                                      if (val && idx < 5) {
-                                        const nextBox = document.getElementById(`otp-box-${idx + 1}`);
-                                        nextBox?.focus();
-                                      }
-                                    }}
-                                    onKeyDown={(e) => {
-                                      // Auto-focus backward on Backspace
-                                      if (e.key === "Backspace" && !otpDigits[idx] && idx > 0) {
-                                        const prevBox = document.getElementById(`otp-box-${idx - 1}`);
-                                        prevBox?.focus();
-                                      }
-                                    }}
-                                    className={`w-[40px] h-[48px] text-center text-lg font-bold font-mono rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-400 transition-all ${
-                                      isFilled 
-                                        ? "bg-emerald-950/75 border-2 border-teal-400 text-teal-300 shadow-[0_0_12px_rgba(20,184,166,0.3)] animate-pulse" 
-                                        : "bg-zinc-900 border border-zinc-800 text-white"
-                                    }`}
-                                  />
-                                );
-                              })}
-                            </div>
-
-                            {/* Timer indicator: 'Resend in 0:28' */}
-                            <div className="text-center h-5">
-                              {otpCountdown > 0 ? (
-                                <span className="text-[10.5px] text-zinc-500 font-bold uppercase tracking-wider">
-                                  Resend in <span className="text-zinc-300 font-mono font-bold">0:{otpCountdown < 10 ? '0' : ''}{otpCountdown}</span>
-                                </span>
-                              ) : (
-                                <button 
-                                  type="button"
-                                  onClick={() => {
-                                    setOtpCountdown(28); // Standard 28 seconds count down
-                                    setOtpDigits(["", "", "", "", "", ""]);
-                                    setToast({ message: "OTP SMS Re-transmitted", subText: "Sent to your carrier Airtel, MTN or Zamtel." });
-                                  }}
-                                  className="text-xs text-blue-400 hover:text-blue-300 font-bold underline transition-colors"
-                                >
-                                  Resend code SMS
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Trust Badge Box */}
-                            <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-900 flex items-start gap-2 text-left max-w-[290px] mx-auto mt-1 shadow-inner">
-                              <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-                              <span className="text-[10px] text-zinc-400 leading-snug font-medium">
-                                Your number is verified against <span className="text-zinc-200 font-extrabold text-[10px]">Zamtel, Airtel & MTN</span> — no extra KYC needed to browse and buy.
-                              </span>
-                            </div>
-
-                            {/* Action Buttons */}
-                            <div className="grid grid-cols-2 gap-3.5 w-full pt-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setBuyerSignupStep(1);
-                                  setOtpDigits(["", "", "", "", "", ""]);
-                                }}
-                                className="h-11 border border-zinc-800 bg-transparent text-zinc-400 py-3 rounded-xl text-center text-xs font-bold hover:text-white transition-all cursor-pointer"
-                              >
-                                Change number
-                              </button>
-
-                              <motion.button
-                                whileHover={{ scale: 1.01 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => {
-                                  if (otpDigits.join("").length < 6) {
-                                    setToast({ message: "Incomplete Code", subText: "Please fill in all six digits." });
-                                    return;
-                                  }
-                                  // Verify and advance to PIN setup step
-                                  setBuyerSignupStep(3);
-                                  setToast({
-                                    message: "Mobile Verified 🎉",
-                                    subText: "Now setup your login PIN and backup questions."
-                                  });
-                                }}
-                                className="h-11 bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                              >
-                                <span>Verify →</span>
-                              </motion.button>
-                            </div>
-                          </div>
-                        )}
-
-                        {buyerSignupStep === 3 && (
                           <div className="space-y-4">
                             <div className="flex flex-col items-center">
                               <div className="w-[64px] h-[64px] bg-blue-600/10 border border-blue-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/5 mb-2 shrink-0">
@@ -2045,11 +2349,11 @@ export default function App() {
                               </div>
                               <h2 className="text-xl font-extrabold text-white">Create Secure PIN</h2>
                               <p className="text-[11px] text-zinc-400 mt-0.5 max-w-[275px] text-center leading-normal">
-                                Set a four digit login PIN. No OTP SMS will ever be required for future logins!
+                                Set a four digit login PIN. OTP code delays are completely bypassed!
                               </p>
                             </div>
 
-                            <div className="space-y-3.5 text-left max-h-[220px] overflow-y-auto pr-1">
+                            <div className="space-y-3.5 text-left">
                               <div>
                                 <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Set 4-Digit Login PIN</label>
                                 <input 
@@ -2071,7 +2375,7 @@ export default function App() {
                                 <select
                                   value={securityQuestion}
                                   onChange={(e) => setSecurityQuestion(e.target.value)}
-                                  className="w-full h-11 bg-zinc-905 border border-zinc-800 text-white text-xs rounded-xl focus:border-blue-500 px-3 cursor-pointer"
+                                  className="w-full h-11 bg-zinc-900 border border-zinc-800 text-white text-xs rounded-xl focus:border-blue-500 px-3 cursor-pointer"
                                 >
                                   <option value="What was the name of your primary school?">What was the name of your primary school?</option>
                                   <option value="In which city or town were you born?">In which city or town were you born?</option>
@@ -2104,11 +2408,10 @@ export default function App() {
                                   setToast({ message: "Answer Required", subText: "An answer is needed to back up these credentials." });
                                   return;
                                 }
-                                // Advance to profile info (Name)
-                                setBuyerSignupStep(4);
+                                setBuyerSignupStep(3);
                                 setToast({
-                                  message: "PIN Configured",
-                                  subText: "Secure logins enabled without downstream OTP delays."
+                                  message: "Credentials Configured!",
+                                  subText: "Recovery backup question mapped to secure store index."
                                 });
                               }}
                               className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg mt-1 flex items-center justify-center gap-1.5 cursor-pointer"
@@ -2119,431 +2422,503 @@ export default function App() {
                           </div>
                         )}
 
-                        {buyerSignupStep === 4 && (
-                          <div className="space-y-4 text-left">
-                            <div className="flex flex-col items-center text-center">
-                              <div className="w-[72px] h-[72px] bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/5 mb-3 shrink-0">
-                                <Coins className="w-10 h-10 text-amber-500 stroke-[2]" />
-                              </div>
-                              <h2 className="text-xl font-extrabold text-white">Select Carrier Wallet</h2>
-                              <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed">
-                                To connect automatically with local mobile money settlements, pick your preferred provider network.
-                              </p>
-                            </div>
-
-                            <div className="space-y-3">
-                              <label className="block text-[10px] uppercase font-bold text-zinc-400 tracking-wider">MoMo Operator Network</label>
-                              <div className="grid grid-cols-3 gap-2.5">
-                                {(["Airtel", "MTN", "Zamtel"] as const).map(op => (
-                                  <button
-                                    key={op}
-                                    type="button"
-                                    onClick={() => setBuyerOperator(op)}
-                                    className={`py-3 text-center font-extrabold text-xs rounded-xl border transition-all cursor-pointer ${
-                                      buyerOperator === op 
-                                        ? "bg-amber-500/10 border-amber-500 text-amber-500 ring-1 ring-amber-500/20" 
-                                        : "bg-zinc-900 border-zinc-850 hover:border-zinc-800 text-zinc-400"
-                                    }`}
-                                  >
-                                    {op}
-                                  </button>
-                                ))}
-                              </div>
-
-                              <div className="bg-[#0c0d12] p-3.5 rounded-2xl border border-zinc-850 text-[11px] text-zinc-400 leading-normal flex items-start gap-2.5 mt-2">
-                                <Lock className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                                <div>
-                                  <span className="font-extrabold text-zinc-200">AUTOMATED WALLET LINK</span>
-                                  <p className="text-[10px] text-zinc-400 mt-0.5">
-                                    Your verified {buyerOperator} wallet links securely to our escrow smart-ledger. No bank accounts or manual credit checks needed.
+                        {/* ROLE-SPECIFIC REGISTRATION FOR BUYERS */}
+                        {selectedRole === "BUYER" && (
+                          <>
+                            {buyerSignupStep === 3 && (
+                              <div className="space-y-4 text-left">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[72px] h-[72px] bg-amber-500/10 border border-amber-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/5 mb-3 shrink-0">
+                                    <Coins className="w-10 h-10 text-amber-500 stroke-[2]" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white">Select Carrier Wallet</h2>
+                                  <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed">
+                                    Connect with local mobile money settlements for checkout payments.
                                   </p>
                                 </div>
-                              </div>
-                            </div>
 
-                            <motion.button
-                              whileHover={{ scale: 1.01 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => {
-                                setBuyerSignupStep(5);
-                                setToast({
-                                  message: "Wallet Confirmed",
-                                  subText: `Linked with ${buyerOperator} MoMo. Next, our escrow guarantee.`
-                                });
-                              }}
-                              className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg mt-4 flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <span>Continue</span>
-                              <ArrowRight className="w-4 h-4" />
-                            </motion.button>
-                          </div>
-                        )}
-
-                        {buyerSignupStep === 5 && (
-                          <div className="space-y-4 text-left">
-                            <div className="flex flex-col items-center text-center">
-                              <div className="w-[72px] h-[72px] bg-emerald-500/10 border border-emerald-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/5 mb-3 shrink-0">
-                                <ShieldCheck className="w-10 h-10 text-emerald-400" />
-                              </div>
-                              <h2 className="text-xl font-extrabold text-white">Selonachipa Escrow</h2>
-                              <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed">
-                                Buy with 100% confidence. Your money is protected in real escrow.
-                              </p>
-                            </div>
-
-                            <div className="bg-[#0c0d12] border border-zinc-850 p-4 rounded-2xl space-y-3.5">
-                              <div className="flex gap-3">
-                                <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-xs text-emerald-400 font-bold shrink-0 mt-0.5">✓</div>
-                                <div>
-                                  <h4 className="text-xs font-bold text-white">Funds Stay Safely Locked</h4>
-                                  <p className="text-[10px] text-zinc-400 mt-0.5">Your payment is locked securely in escrow. Sellers are only paid when you inspect and confirm receipt.</p>
+                                <div className="space-y-2.5">
+                                  {(["Airtel Money", "MTN MoMo", "Zamtel Kwacha"] as const).map(wt => {
+                                    const isSelected = buyerOperator === (wt.startsWith("Airtel") ? "Airtel" : wt.startsWith("MTN") ? "MTN" : "Zamtel");
+                                    return (
+                                      <button
+                                        key={wt}
+                                        type="button"
+                                        onClick={() => setBuyerOperator(wt.startsWith("Airtel") ? "Airtel" : wt.startsWith("MTN") ? "MTN" : "Zamtel")}
+                                        className={`w-full py-3.5 px-4 rounded-xl border flex justify-between items-center transition-all cursor-pointer ${
+                                          isSelected 
+                                            ? "bg-amber-500/10 border-amber-500 text-white" 
+                                            : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
+                                        }`}
+                                      >
+                                        <span className="text-xs font-bold font-sans">{wt}</span>
+                                        {isSelected && <span className="text-[10px] text-amber-400 font-extrabold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">DEFAULT Escrow</span>}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
-                              </div>
 
-                              <div className="flex gap-3">
-                                <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-xs text-emerald-400 font-bold shrink-0 mt-0.5">✓</div>
-                                <div>
-                                  <h4 className="text-xs font-bold text-white">Automatic Courier Matching</h4>
-                                  <p className="text-[10px] text-zinc-400 mt-0.5">Our smart routing pairs local riders instantly to pickup items, saving transition delays.</p>
+                                <motion.button
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => setBuyerSignupStep(4)}
+                                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <span>Lock in Wallet Selection</span>
+                                  <ArrowRight className="w-4 h-4" />
+                                </motion.button>
+                              </div>
+                            )}
+
+                            {buyerSignupStep === 4 && (
+                              <div className="space-y-4 text-left">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[64px] h-[64px] bg-indigo-500/10 border border-indigo-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/5 mb-3 shrink-0">
+                                    <ShoppingBag className="w-8 h-8 text-indigo-400" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white">Selonachipa Escrow Agreement</h2>
+                                  <p className="text-[11.5px] text-zinc-400 mt-1 leading-normal max-w-[280px]">
+                                    We protect your payments. Funds are locked in Lipila Escrow and only released to sellers as soon as they dispatch.
+                                  </p>
                                 </div>
-                              </div>
 
-                              <div className="flex gap-3">
-                                <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-xs text-emerald-400 font-bold shrink-0 mt-0.5">✓</div>
-                                <div>
-                                  <h4 className="text-xs font-bold text-white">Full Refund Guarantee</h4>
-                                  <p className="text-[10px] text-zinc-400 mt-0.5">If the item is not as expected or fails delivery, get a direct refund back to your MoMo wallet immediately.</p>
+                                <div className="space-y-2 text-[10.5px] text-zinc-400 max-h-[170px] overflow-y-auto scrollbar-none border border-zinc-850 p-3 bg-[#0c0d12]/50 rounded-2xl leading-relaxed">
+                                  <div className="flex gap-2 items-start py-0.5">
+                                    <span className="text-[#ffa500] font-bold">1.</span>
+                                    <span>Buyers pay via Lipila, triggering prompt PIN authorization.</span>
+                                  </div>
+                                  <div className="flex gap-2 items-start py-0.5">
+                                    <span className="text-[#ffa500] font-bold">2.</span>
+                                    <span>Once verified, funds are auto-locked in Escrow.</span>
+                                  </div>
+                                  <div className="flex gap-2 items-start py-0.5">
+                                    <span className="text-[#ffa500] font-bold">3.</span>
+                                    <span>Cash release is triggered when sellers register parcel drop-offs at nearby hubs.</span>
+                                  </div>
                                 </div>
+
+                                <motion.button
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => setBuyerSignupStep(5)}
+                                  className="w-full bg-[#ffa500] hover:bg-amber-500 text-black text-xs font-extrabold py-3.5 rounded-xl shadow-lg mt-2 flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <span>I Accept Escrow Protection</span>
+                                  <ShieldCheck className="w-4 h-4 text-black" />
+                                </motion.button>
                               </div>
-                            </div>
+                            )}
 
-                            <motion.button
-                              whileHover={{ scale: 1.01 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => {
-                                setBuyerSignupStep(6);
-                                setToast({
-                                  message: "Protocol Accepted",
-                                  subText: "Now, let's customize your marketplace feeds."
-                                });
-                              }}
-                              className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg mt-4 flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <span>Agree & Next</span>
-                              <ArrowRight className="w-4 h-4" />
-                            </motion.button>
-                          </div>
-                        )}
+                            {buyerSignupStep === 5 && (
+                              <div className="space-y-4 text-left">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[64px] h-[64px] bg-teal-500/10 border border-teal-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/5 mb-3 shrink-0">
+                                    <ShoppingBag className="w-8 h-8 text-teal-400" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white font-sans">Choose Interests</h2>
+                                  <p className="text-[11px] text-zinc-400 mt-1 max-w-[280px]">
+                                    Calibrate product feeds with matching items from local farmers and vendors.
+                                  </p>
+                                </div>
 
-                        {buyerSignupStep === 6 && (
-                          <div className="space-y-4 font-sans text-left">
-                            <div className="flex flex-col items-center text-center">
-                              <div className="w-[64px] h-[64px] bg-[#0d9488]/10 border border-[#0d9488]/25 rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/5 mb-3 shrink-0">
-                                <Sparkles className="w-9 h-9 text-[#0d9488] stroke-[2]" />
+                                <div className="grid grid-cols-2 gap-2.5 max-h-[190px] overflow-y-auto pr-1">
+                                  {["Fresh Produce", "Chitenge Fashion", "Organic Fertilizer", "Dry Foods", "Poultry Feeders", "Copper Crafts"].map(cat => {
+                                    const hasCat = buyerInterests.includes(cat);
+                                    return (
+                                      <button
+                                        key={cat}
+                                        type="button"
+                                        onClick={() => {
+                                          if (hasCat) {
+                                            setBuyerInterests(prev => prev.filter(c => c !== cat));
+                                          } else {
+                                            setBuyerInterests(prev => [...prev, cat]);
+                                          }
+                                        }}
+                                        className={`py-3 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex justify-between items-center ${
+                                          hasCat 
+                                            ? "bg-teal-500/10 border-teal-500 text-teal-400" 
+                                            : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                                        }`}
+                                      >
+                                        <span className="truncate">{cat}</span>
+                                        {hasCat && <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0 ml-1.5" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <motion.button
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => setBuyerSignupStep(6)}
+                                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <span>Calibrate Feed →</span>
+                                </motion.button>
                               </div>
-                              <h2 className="text-xl font-extrabold text-white">What do you usually buy?</h2>
-                              <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed">
-                                Pick a few — your feed will be tuned to match.
-                              </p>
-                            </div>
+                            )}
 
-                            <div className="grid grid-cols-2 gap-2.5 max-h-[190px] overflow-y-auto pr-1">
-                              {[
-                                { val: "Fresh produce", label: "Fresh produce", icon: Sprout },
-                                { val: "Fashion & chitenge", label: "Fashion & chitenge", icon: Shirt },
-                                { val: "Electronics", label: "Electronics", icon: Smartphone },
-                                { val: "Home & furniture", label: "Home & furniture", icon: Sofa },
-                                { val: "Hardware & tools", label: "Hardware & tools", icon: Wrench },
-                                { val: "Beauty & health", label: "Beauty & health", icon: HeartPulse },
-                                { val: "Parcels", label: "Parcels", icon: Package },
-                                { val: "Fast Food & Restaurant", label: "Fast Food & Restaurant", icon: Utensils }
-                              ].map(item => {
-                                const selected = buyerInterests.includes(item.val);
-                                const IconComponent = item.icon;
-                                return (
+                            {buyerSignupStep === 6 && (
+                              <div className="space-y-4 font-sans text-left">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[64px] h-[64px] bg-[#ffa500]/10 border border-[#ffa500]/25 rounded-2xl flex items-center justify-center shadow-lg shadow-[#ffa500]/5 mb-3 shrink-0">
+                                    <ShoppingBag className="w-8 h-8 text-[#ffa500]" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white">Select Delivery Area</h2>
+                                  <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px]">
+                                    Determine compounds in Lusaka, Ndola or Kitwe to optimize local delivery calculations.
+                                  </p>
+                                </div>
+
+                                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {(["Lusaka", "Ndola", "Kitwe"] as const).map(city => (
+                                      <button
+                                        key={city}
+                                        type="button"
+                                        onClick={() => {
+                                          setBuyerLocationMethod("manual");
+                                          setBuyerSelectedCity(city);
+                                        }}
+                                        className={`py-2 text-center text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                                          buyerLocationMethod === "manual" && buyerSelectedCity === city
+                                            ? "bg-teal-500/10 border-teal-500 text-teal-400"
+                                            : "bg-zinc-900 border-zinc-855 text-zinc-400"
+                                        }`}
+                                      >
+                                        {city}
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider mb-1">Neighbourhood / Compound</label>
+                                    <input
+                                      type="text"
+                                      value={buyerNeighbourhood}
+                                      onChange={(e) => {
+                                        setBuyerLocationMethod("manual");
+                                        setBuyerNeighbourhood(e.target.value);
+                                      }}
+                                      placeholder="e.g. Chelstone, Kabwata, Town"
+                                      className="w-full h-11 bg-zinc-900 border border-zinc-855 rounded-xl px-4 text-white text-xs focus:border-teal-500 focus:outline-none placeholder-zinc-650 font-mono"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 pt-1">
                                   <button
-                                    key={item.val}
                                     type="button"
                                     onClick={() => {
-                                      if (selected) {
-                                        setBuyerInterests(prev => prev.filter(v => v !== item.val));
-                                      } else {
-                                        setBuyerInterests(prev => [...prev, item.val]);
+                                      setBuyerLocationMethod(null);
+                                      setBuyerSignupStep(7);
+                                      setToast({
+                                        message: "Location Skipped",
+                                        subText: "We can set delivery compound later during active orders checkout."
+                                      });
+                                    }}
+                                    className="h-11 border border-zinc-800 bg-transparent text-zinc-400 hover:text-white py-3 rounded-xl text-center text-xs font-bold transition-all cursor-pointer"
+                                  >
+                                    Skip for now
+                                  </button>
+
+                                  <motion.button
+                                    whileHover={{ scale: 1.01 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => {
+                                      if (buyerLocationMethod !== "manual") {
+                                        setBuyerLocationMethod("manual");
                                       }
+                                      if (!buyerNeighbourhood.trim()) {
+                                        setToast({ message: "Neighborhood Needed", subText: "Please type your neighborhood!" });
+                                        return;
+                                      }
+                                      setBuyerSignupStep(7);
+                                      setToast({
+                                        message: "Location Confirmed",
+                                        subText: `${buyerNeighbourhood}, ${buyerSelectedCity} configured successfully.`
+                                      });
                                     }}
-                                    className={`p-3 rounded-2xl text-left border flex flex-col items-start gap-2.5 cursor-pointer transition-all ${
-                                      selected 
-                                        ? "bg-teal-950/25 border-emerald-500 text-teal-300 shadow-[0_0_12px_rgba(20,184,166,0.15)] ring-1 ring-emerald-500/30" 
-                                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-850"
-                                    }`}
+                                    className="h-11 bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                                   >
-                                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-colors ${
-                                      selected 
-                                        ? "bg-teal-500/10 border-teal-500/30 text-teal-400" 
-                                        : "bg-zinc-950 border-zinc-800 text-zinc-500"
-                                    }`}>
-                                      <IconComponent className="w-4.5 h-4.5 stroke-[2]" />
-                                    </div>
-                                    <span className="font-extrabold text-xs tracking-tight text-white leading-tight mt-1">{item.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {/* Personalized Algorithm Indicator Badge */}
-                            <div className="bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-900/60 flex items-center gap-2 text-left">
-                              <span className="text-[10px] text-zinc-400 leading-snug font-medium">
-                                ⚡ Selected options sync directly to the <span className="text-teal-400 font-extrabold">Selonachipa Infinity Memory</span> algorithm to personalize your live market reel streams.
-                              </span>
-                            </div>
-
-                            {/* Skippable Controls */}
-                            <div className="grid grid-cols-2 gap-3 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  // Skippable behavior resets preferred categories to empty and advances
-                                  setBuyerInterests([]);
-                                  setBuyerSignupStep(7);
-                                  setToast({
-                                    message: "Preferences Skipped",
-                                    subText: "Feed set to general. Next, configure your delivery zone."
-                                  });
-                                }}
-                                className="h-11 border border-zinc-800 bg-transparent text-zinc-400 hover:text-white py-3 rounded-xl text-center text-xs font-bold transition-all cursor-pointer"
-                              >
-                                Skip
-                              </button>
-
-                              <motion.button
-                                whileHover={{ scale: 1.01 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => {
-                                  setBuyerSignupStep(7);
-                                  setToast({
-                                    message: "Preferences Calibration Loaded",
-                                    subText: `${buyerInterests.length} preferred categories saved. Next, set your delivery zone.`
-                                  });
-                                }}
-                                className="h-11 bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                              >
-                                <span>Continue →</span>
-                              </motion.button>
-                            </div>
-                          </div>
-                        )}
-
-                        {buyerSignupStep === 7 && (
-                          <div className="space-y-4 font-sans text-left">
-                            <div className="flex flex-col items-center text-center">
-                              <div className="w-[64px] h-[64px] bg-[#0d9488]/10 border border-[#0d9488]/25 rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/5 mb-3 shrink-0">
-                                <MapPin className="w-8 h-8 text-[#0d9488]" />
-                              </div>
-                              <h2 className="text-xl font-extrabold text-white">Where do you want delivery?</h2>
-                              <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed animate-pulse">
-                                Sets your default delivery address and rider zone.
-                              </p>
-                            </div>
-
-                            {/* GPS Auto location block */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBuyerLocationMethod("gps");
-                                setBuyerSelectedCity("Lusaka");
-                                setBuyerNeighbourhood("Munali");
-                                setBuyerSignupStep(8);
-                                setToast({
-                                  message: "GPS Location Saved",
-                                  subText: "Zone set to Munali, Lusaka automatically! Let's get your name."
-                                });
-                              }}
-                              className="w-full text-left bg-teal-950/15 border border-[#0d9488]/30 p-3.5 rounded-2xl flex items-center justify-between hover:bg-teal-950/25 transition-all outline-none cursor-pointer group"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 shrink-0">
-                                  <MapPin className="w-5 h-5 text-teal-400 fill-teal-400/20" />
-                                </div>
-                                <div>
-                                  <p className="text-xs font-extrabold text-teal-200">Use my current location</p>
-                                  <p className="text-[10px] text-zinc-400 mt-0.5 font-semibold">Detected: {buyerDetectedArea}</p>
+                                    <span>Confirm →</span>
+                                  </motion.button>
                                 </div>
                               </div>
-                              <div className="h-6 w-6 rounded-full bg-emerald-500/25 border border-[#0d9488]/50 flex items-center justify-center text-emerald-400 text-xs font-bold font-mono">
-                                ✓
-                              </div>
-                            </button>
+                            )}
 
-                            <div className="flex items-center gap-3 justify-center py-0.5 text-zinc-650">
-                              <span className="w-1/4 h-[1px] bg-zinc-850"></span>
-                              <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">or enter manually</span>
-                              <span className="w-1/4 h-[1px] bg-zinc-850"></span>
-                            </div>
-
-                            {/* Manual location select inputs */}
-                            <div className="space-y-3">
-                              <div className="grid grid-cols-3 gap-2">
-                                {(["Lusaka", "Ndola", "Kitwe"] as const).map(city => (
-                                  <button
-                                    key={city}
-                                    type="button"
-                                    onClick={() => {
-                                      setBuyerLocationMethod("manual");
-                                      setBuyerSelectedCity(city);
-                                    }}
-                                    className={`py-2 text-center text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                                      buyerLocationMethod === "manual" && buyerSelectedCity === city
-                                        ? "bg-teal-500/10 border-teal-500 text-teal-400"
-                                        : "bg-zinc-900 border-zinc-850 text-zinc-400 animate-none"
-                                    }`}
-                                  >
-                                    {city}
-                                  </button>
-                                ))}
-                              </div>
-
-                              <div>
-                                <label className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider mb-1">Neighbourhood / Compound</label>
-                                <input
-                                  type="text"
-                                  value={buyerNeighbourhood}
-                                  onChange={(e) => {
-                                    setBuyerLocationMethod("manual");
-                                    setBuyerNeighbourhood(e.target.value);
-                                  }}
-                                  placeholder="e.g. Chelstone, Kabulonga, Town"
-                                  className="w-full h-11 bg-zinc-900 border border-zinc-850 rounded-xl px-4 text-white text-xs focus:border-teal-500 focus:outline-[#ffa500] placeholder-zinc-650 font-mono"
-                                />
-                              </div>
-
-                              <p className="text-[10px] text-zinc-500 italic">
-                                Used to match you with nearby sellers and riders.
-                              </p>
-                            </div>
-
-                            {/* Continue buttons */}
-                            <div className="grid grid-cols-2 gap-3 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  // Skippable behavior keeps null method and goes to step 8
-                                  setBuyerLocationMethod(null);
-                                  setBuyerSignupStep(8);
-                                  setToast({
-                                    message: "Location Skipped",
-                                    subText: "We can configure delivery at checkout. Let's finish with your name!"
-                                  });
-                                }}
-                                className="h-11 border border-zinc-800 bg-transparent text-zinc-400 hover:text-white py-3 rounded-xl text-center text-xs font-bold transition-all cursor-pointer"
-                              >
-                                Skip for now
-                              </button>
-
-                              <motion.button
-                                whileHover={{ scale: 1.01 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => {
-                                  if (buyerLocationMethod !== "manual") {
-                                    setBuyerLocationMethod("manual");
-                                  }
-                                  if (!buyerNeighbourhood.trim()) {
-                                    setToast({ message: "Neighborhood Needed", subText: "Please type your neighbourhood!" });
-                                    return;
-                                  }
-                                  setBuyerSignupStep(8);
-                                  setToast({
-                                    message: "Location Confirmed",
-                                    subText: `${buyerNeighbourhood}, ${buyerSelectedCity} set as delivery area.`
-                                  });
-                                }}
-                                className="h-11 bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                              >
-                                <span>Confirm →</span>
-                              </motion.button>
-                            </div>
-                          </div>
-                        )}
-
-                        {buyerSignupStep === 8 && (
-                          <div className="space-y-4 font-sans text-left">
-                            <div className="flex flex-col items-center text-center">
-                              <div className="w-[64px] h-[64px] bg-blue-600/10 border border-blue-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/5 mb-3 shrink-0">
-                                <User className="w-8 h-8 text-blue-500" />
-                              </div>
-                              <h2 className="text-xl font-extrabold text-white">What should we call you?</h2>
-                              <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed">
-                                Your name appears on orders so sellers and riders can find you.
-                              </p>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div>
-                                <label className="block text-[9px] uppercase font-bold text-zinc-400 tracking-wider mb-1">First Name (Required)</label>
-                                <input
-                                  type="text"
-                                  value={buyerFirstName}
-                                  onChange={(e) => setBuyerFirstName(e.target.value)}
-                                  placeholder="e.g. Bupe"
-                                  className="w-full h-11 bg-zinc-900 border border-zinc-850 rounded-xl px-4 text-white text-xs focus:border-blue-500 focus:outline-[#ffa500]"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[9px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Surname (Optional)</label>
-                                <input
-                                  type="text"
-                                  value={buyerSurname}
-                                  onChange={(e) => setBuyerSurname(e.target.value)}
-                                  placeholder="e.g. Mwansa"
-                                  className="w-full h-11 bg-zinc-900 border border-zinc-850 rounded-xl px-4 text-white text-xs focus:border-blue-500 focus:outline-[#ffa500]"
-                                />
-                              </div>
-
-                              {/* Security Privacy Notice */}
-                              <div className="bg-[#0c0d12] border border-zinc-850 p-3 rounded-2xl text-[10.5px] text-zinc-400 leading-normal flex items-start gap-2.5">
-                                <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                                <div>
-                                  <p className="text-[10px] text-zinc-400 leading-snug font-semibold text-left">
-                                    Your name or number is private — only matched riders see your delivery name when dispatch commences.
+                            {buyerSignupStep === 7 && (
+                              <div className="space-y-4 font-sans text-left">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[64px] h-[64px] bg-blue-600/10 border border-blue-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/5 mb-3 shrink-0">
+                                    <User className="w-8 h-8 text-blue-500" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white">Final Account Summary</h2>
+                                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
+                                    Verify your registered details to complete your secure setup.
                                   </p>
                                 </div>
+
+                                <div className="bg-[#0c0d12] border border-zinc-850 p-3.5 rounded-2xl space-y-2 text-xs text-zinc-300">
+                                  <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                                    <span className="text-zinc-500 font-bold">Subscriber Name</span>
+                                    <span className="font-semibold text-white">{buyerFirstName} {buyerSurname}</span>
+                                  </div>
+                                  <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                                    <span className="text-zinc-500 font-bold">SIM Phone Number</span>
+                                    <span className="font-mono text-zinc-200 font-bold">+260 {buyerPhone}</span>
+                                  </div>
+                                  <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                                    <span className="text-zinc-500 font-bold">Wallet Carrier</span>
+                                    <span className="font-semibold text-white">{buyerOperator}</span>
+                                  </div>
+                                  <div className="flex justify-between text-[11px]">
+                                    <span className="text-zinc-500 font-bold">Delivery Zone</span>
+                                    <span className="font-semibold text-emerald-400">{buyerNeighbourhood || "Munali"}, {buyerSelectedCity || "Lusaka"}</span>
+                                  </div>
+                                </div>
+
+                                <motion.button
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => {
+                                    const combined = `${buyerFirstName} ${buyerSurname}`.trim();
+                                    setBuyerNameInput(combined);
+                                    setCheckoutPhone("0" + buyerPhone);
+                                    setCheckoutOperator(buyerOperator);
+
+                                    if (!buyerNeighbourhood.trim()) {
+                                      setBuyerNeighbourhood("Munali");
+                                      setBuyerSelectedCity("Lusaka");
+                                    }
+
+                                    // Save registered account to localStorage
+                                    const localAccounts = localStorage.getItem("selo_registered_accounts") 
+                                      ? JSON.parse(localStorage.getItem("selo_registered_accounts")!) 
+                                      : [];
+                                    const newAcc = {
+                                      phone: buyerPhone,
+                                      name: combined,
+                                      pin: buyerPinCode,
+                                      securityQuestion,
+                                      securityAnswer,
+                                      role: "BUYER",
+                                      carrier: buyerOperator,
+                                      neighbourhood: buyerNeighbourhood || "Munali",
+                                      city: buyerSelectedCity || "Lusaka"
+                                    };
+                                    localAccounts.push(newAcc);
+                                    localStorage.setItem("selo_registered_accounts", JSON.stringify(localAccounts));
+
+                                    setIsLoggedIn(true);
+                                    setBuyerFeedTab("FEED");
+                                    setToast({
+                                      message: `Account Active, Welcome ${buyerFirstName}!`,
+                                      subText: "Calibration check complete. Launched into main shopping index!"
+                                    });
+                                  }}
+                                  className="w-full bg-[#ffa500] hover:bg-amber-500 text-black text-xs font-extrabold py-3.5 rounded-xl shadow-lg mt-4 flex items-center justify-center gap-1.5 cursor-pointer h-11"
+                                >
+                                  <span>Complete Setup & Buy ✓</span>
+                                </motion.button>
                               </div>
-                            </div>
+                            )}
+                          </>
+                        )}
 
-                            <motion.button
-                              whileHover={{ scale: 1.01 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => {
-                                if (!buyerFirstName.trim()) {
-                                  setToast({ message: "First Name Required", subText: "This serves as dispatch identity." });
-                                  return;
-                                }
-                                
-                                const combined = (buyerSurname ? `${buyerFirstName} ${buyerSurname}` : buyerFirstName).trim();
-                                setBuyerNameInput(combined);
-                                
-                                // Set carrier parameters
-                                setCheckoutPhone("0" + buyerPhone);
-                                setCheckoutOperator(buyerOperator);
+                        {/* ROLE-SPECIFIC REGISTRATION FOR SELLERS / AGENTS / RIDERS */}
+                        {selectedRole !== "BUYER" && (
+                          <>
+                            {buyerSignupStep === 3 && (
+                              <div className="space-y-4 text-left font-sans">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[64px] h-[64px] bg-indigo-500/10 border border-indigo-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/5 mb-3 shrink-0">
+                                    <ShoppingBag className="w-8 h-8 text-indigo-400" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white">{selectedRole} Configuration</h2>
+                                  <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px]">
+                                    Provide credentials and carrier wallet options to configure your active dashboard.
+                                  </p>
+                                </div>
 
-                                // If empty, set a standard neighborhood default so distance calculations work
-                                if (!buyerNeighbourhood.trim()) {
-                                  setBuyerNeighbourhood("Munali");
-                                  setBuyerSelectedCity("Lusaka");
-                                }
+                                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                                  {/* Mobile Money Carrier Selection */}
+                                  <div>
+                                    <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Mobile Money Payout Network</label>
+                                    <select
+                                      value={buyerOperator}
+                                      onChange={(e) => setBuyerOperator(e.target.value as any)}
+                                      className="w-full h-10 bg-zinc-900 border border-zinc-800 text-white text-xs rounded-xl focus:border-blue-500 px-3 cursor-pointer"
+                                    >
+                                      <option value="Airtel">Airtel Money (+260 {buyerPhone})</option>
+                                      <option value="MTN">MTN MoMo (+260 {buyerPhone})</option>
+                                      <option value="Zamtel">Zamtel Kwacha (+260 {buyerPhone})</option>
+                                    </select>
+                                  </div>
 
-                                setIsLoggedIn(true);
-                                setBuyerFeedTab("FEED"); // lands them directly inside the personalised welcome feed
-                                setToast({
-                                  message: `Welcome to Selonachipa, ${buyerFirstName}!`,
-                                  subText: "Your feed has been calibrated with your preferred categories."
-                                });
-                              }}
-                              className="w-full bg-[#ffa500] hover:bg-amber-500 text-black text-xs font-extrabold py-3.5 rounded-xl shadow-lg mt-4 flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <span>Finish setup ✓</span>
-                            </motion.button>
-                          </div>
+                                  {selectedRole === "SELLER" && (
+                                    <>
+                                      <div>
+                                        <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Store / Hub Business Name</label>
+                                        <input
+                                          type="text"
+                                          value={sellerStoreName}
+                                          onChange={(e) => setSellerStoreName(e.target.value)}
+                                          placeholder="e.g. Chisamba Organic Trade Hub"
+                                          className="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Store Landmark Location</label>
+                                        <input
+                                          type="text"
+                                          value={sellerLocationLandmark}
+                                          onChange={(e) => setSellerLocationLandmark(e.target.value)}
+                                          placeholder="e.g. Plot 33, Soweto Market, Lusaka"
+                                          className="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {selectedRole === "AGENT" && (
+                                    <>
+                                      <div>
+                                        <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Commission Agency Name</label>
+                                        <input
+                                          type="text"
+                                          value={sellerStoreName}
+                                          onChange={(e) => setSellerStoreName(e.target.value)}
+                                          placeholder="e.g. Kabwata Farmers Vetting Hub"
+                                          className="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">NRC National Identity Certificate ID</label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. 509212/11/1"
+                                          className="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {selectedRole === "RIDER" && (
+                                    <>
+                                      <div>
+                                        <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Active Delivery Vehicle Category</label>
+                                        <select
+                                          className="w-full h-10 bg-zinc-900 border border-zinc-800 text-white text-xs rounded-xl focus:border-blue-500 px-3 cursor-pointer"
+                                        >
+                                          <option value="Motorcycle">Motorcycle (Fast Dispatch)</option>
+                                          <option value="Bicycle">Bicycle (Micro zone)</option>
+                                          <option value="Toyota Vitz">Toyota Vitz (Box Cargo)</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-[9.5px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Vehicle/Bicycle Plate Number</label>
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. ZM 9012"
+                                          className="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 text-white text-xs focus:border-blue-500 focus:outline-none"
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+
+                                <motion.button
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => setBuyerSignupStep(4)}
+                                  className="w-full bg-[#ffa500] hover:bg-amber-500 text-black text-xs font-bold py-3.5 rounded-xl shadow-lg mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <span>Advance to Verification Summary →</span>
+                                </motion.button>
+                              </div>
+                            )}
+
+                            {buyerSignupStep === 4 && (
+                              <div className="space-y-4 font-sans text-left">
+                                <div className="flex flex-col items-center text-center">
+                                  <div className="w-[64px] h-[64px] bg-emerald-500/10 border border-emerald-500/25 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/5 mb-3 shrink-0">
+                                    <ShieldCheck className="w-8 h-8 text-emerald-400" />
+                                  </div>
+                                  <h2 className="text-xl font-extrabold text-white">Verification Complete</h2>
+                                  <p className="text-[11.5px] text-zinc-400 mt-1 max-w-[280px] leading-relaxed">
+                                    Your legal SIM profile stands verified across national directory protocols.
+                                  </p>
+                                </div>
+
+                                <div className="bg-[#0c0d12] border border-zinc-850 p-3.5 rounded-2xl space-y-2 text-xs text-zinc-300">
+                                  <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                                    <span className="text-zinc-500 font-bold">SIM Profile Holder</span>
+                                    <span className="font-semibold text-white">{buyerFirstName} {buyerSurname}</span>
+                                  </div>
+                                  <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                                    <span className="text-zinc-500 font-bold">Role Category</span>
+                                    <span className="font-bold text-[#ffa500] uppercase text-[10.5px]">{selectedRole}</span>
+                                  </div>
+                                  <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                                    <span className="text-zinc-500 font-bold">Payout Mobile Number</span>
+                                    <span className="font-mono text-zinc-200 font-bold">+260 {buyerPhone}</span>
+                                  </div>
+                                  <div className="flex justify-between text-[11px]">
+                                    <span className="text-zinc-500 font-bold">Default Router</span>
+                                    <span className="font-semibold text-teal-400">{buyerOperator} Money Gateway</span>
+                                  </div>
+                                </div>
+
+                                <motion.button
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => {
+                                    const combined = `${buyerFirstName} ${buyerSurname}`.trim();
+                                    
+                                    // Set states dynamically based on role!
+                                    if (selectedRole === "SELLER") {
+                                      setSellerName(combined);
+                                      setSellerStoreName(sellerStoreName || `${combined}'s Shop`);
+                                      setSellerPrimaryWallet(`${buyerOperator} Money (+260${buyerPhone})`);
+                                    } else if (selectedRole === "AGENT") {
+                                      // agency variables
+                                    } else if (selectedRole === "RIDER") {
+                                      // rider variables
+                                    }
+
+                                    // Create record
+                                    const localAccounts = localStorage.getItem("selo_registered_accounts") 
+                                      ? JSON.parse(localStorage.getItem("selo_registered_accounts")!) 
+                                      : [];
+                                    const newAcc = {
+                                      phone: buyerPhone,
+                                      name: combined,
+                                      pin: buyerPinCode,
+                                      securityQuestion,
+                                      securityAnswer,
+                                      role: selectedRole,
+                                      storeName: sellerStoreName,
+                                      landmark: sellerLocationLandmark,
+                                      carrier: buyerOperator
+                                    };
+                                    localAccounts.push(newAcc);
+                                    localStorage.setItem("selo_registered_accounts", JSON.stringify(localAccounts));
+
+                                    setIsLoggedIn(true);
+                                    setToast({
+                                      message: `Setup Complete 🎉`,
+                                      subText: `Logged in securely as ${combined}. Welcome to Selonachipa.`
+                                    });
+                                  }}
+                                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold py-3.5 rounded-xl shadow-lg mt-4 flex items-center justify-center gap-1.5 cursor-pointer h-11"
+                                >
+                                  <span>Complete Verification & Launch Dashboard</span>
+                                </motion.button>
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     )}
@@ -2738,19 +3113,12 @@ export default function App() {
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => {
-                        if (selectedRole === "BUYER") {
-                          setBuyerSignupStep(1); // Redirect Buyer directly into 6-step flow!
-                          setToast({
-                            message: "BUYER ONBOARDING",
-                            subText: "Loading Zambia's welcome experience..."
-                          });
-                        } else {
-                          setIsLoggedIn(true);
-                          setToast({
-                            message: `ACCESS MOUNTED: ${selectedRole} Account Portal`,
-                            subText: "Loading interactive dispatcher data and mobile money gateway registers."
-                          });
-                        }
+                        setBuyerSignupStep(1); // Redirect all roles to step 1
+                        setIsBuyerLoginMode(true); // Default to securing a login/PIN sign in
+                        setToast({
+                          message: `${selectedRole} ACCESS SYSTEM`,
+                          subText: "Sign in with your mobile number & PIN, or register a new verified account."
+                        });
                       }}
                       className="w-full bg-[#5c5ef5] hover:bg-indigo-650 text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-colors"
                     >
@@ -3893,13 +4261,32 @@ export default function App() {
                                     <label className="block text-[9px] uppercase font-mono text-zinc-400 font-bold tracking-wider mb-1">
                                       Wallet MoMo Number
                                     </label>
-                                    <input
-                                      type="tel"
-                                      placeholder="09XXXXXXXX"
-                                      value={checkoutPhone}
-                                      onChange={(e) => setCheckoutPhone(e.target.value)}
-                                      className="w-full bg-black border border-zinc-850 rounded-xl px-3 py-2 text-white font-mono text-xs focus:border-purple-500 focus:outline-none"
-                                    />
+                                    <div className="relative">
+                                      <input
+                                        type="tel"
+                                        placeholder="09XXXXXXXX"
+                                        value={checkoutPhone}
+                                        onChange={(e) => setCheckoutPhone(e.target.value)}
+                                        className="w-full bg-black border border-zinc-850 rounded-xl px-3 py-2 text-white font-mono text-xs focus:border-purple-500 focus:outline-none pr-8"
+                                      />
+                                      {isLookingUpName && (
+                                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                                          <RefreshCw className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Auto-resolved subscriber name presentation */}
+                                    {lookupName && (
+                                      <motion.div
+                                        initial={{ opacity: 0, y: -4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="mt-1 flex items-center gap-1.5 px-3 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20 text-[10px]"
+                                      >
+                                        <span className="text-purple-400 font-mono">Subscriber Name:</span>
+                                        <span className="text-zinc-200 font-bold">{lookupName}</span>
+                                      </motion.div>
+                                    )}
                                   </div>
 
                                   {/* Delivery Address Dropdown location */}
@@ -4990,13 +5377,32 @@ export default function App() {
                                       <label className="block text-[9.5px] uppercase font-mono text-zinc-400 font-bold tracking-wider mb-1">
                                         Wallet Phone Number
                                       </label>
-                                      <input 
-                                        type="tel"
-                                        value={checkoutPhone}
-                                        onChange={(e) => setCheckoutPhone(e.target.value)}
-                                        placeholder="09XXXXXXXX"
-                                        className="w-full bg-[#050506] border border-zinc-800 text-xs py-2 px-3.5 rounded-xl text-white font-mono focus:border-emerald-400 focus:outline-none"
-                                      />
+                                      <div className="relative">
+                                        <input 
+                                          type="tel"
+                                          value={checkoutPhone}
+                                          onChange={(e) => setCheckoutPhone(e.target.value)}
+                                          placeholder="09XXXXXXXX"
+                                          className="w-full bg-[#050506] border border-zinc-800 text-xs py-2 px-3.5 rounded-xl text-white font-mono focus:border-emerald-400 focus:outline-none pr-8"
+                                        />
+                                        {isLookingUpName && (
+                                          <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                                            <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Subscriber Name linked to the phone */}
+                                      {lookupName && (
+                                        <motion.div 
+                                          initial={{ opacity: 0, y: -4 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          className="mt-1 flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20 text-[10.5px]"
+                                        >
+                                          <span className="text-emerald-400 font-mono">Subscriber Name:</span>
+                                          <span className="text-zinc-250 font-bold">{lookupName}</span>
+                                        </motion.div>
+                                      )}
                                     </div>
 
                                     {/* Tip your rider option */}
