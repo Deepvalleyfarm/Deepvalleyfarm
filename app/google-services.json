@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "107694995320",
+    "project_id": "selonachipa-prod",
+    "storage_bucket": "selonachipa-prod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:107694995320:android:5ed14f7de937f47c3d7a8d",
+        "android_client_info": {
+          "package_name": "selo.na.chipa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyFakePlaceholderKeyForSeloNaChipaProd"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
