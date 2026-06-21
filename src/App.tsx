@@ -1159,14 +1159,50 @@ export default function App() {
     }
   }, [toast]);
 
-  // Stop playing narration when active reel changes to maintain sound fidelity
+  // Auto-play and Auto-loop narration audio when active reel or tab changes to ensure immersive discovery experience
   useEffect(() => {
-    if (activeReelAudio) {
-      activeReelAudio.pause();
+    let activeAudio: HTMLAudioElement | null = null;
+
+    if (buyerFeedTab === "REELS") {
+      const activeListings = getPersonalizedListings();
+      const currentReel = activeListings[currentReelIndex];
+
+      if (currentReel && currentReel.narration_audio_url) {
+        activeAudio = new Audio(currentReel.narration_audio_url);
+        setActiveReelAudio(activeAudio);
+        setActiveReelTime(0);
+        setReelIsPaused(false);
+
+        activeAudio.addEventListener("timeupdate", () => {
+          if (activeAudio) {
+            setActiveReelTime(activeAudio.currentTime);
+          }
+        });
+
+        activeAudio.addEventListener("ended", () => {
+          // Auto-loop: seamlessly restart voiceover play and increment replay telemetry metrics for backend insights
+          setReelReplayCount(prev => prev + 1);
+          if (activeAudio) {
+            activeAudio.currentTime = 0;
+            activeAudio.play().catch(e => console.warn("Auto-loop playback failed:", e));
+          }
+        });
+
+        // Trigger autoplay immediately
+        activeAudio.play().catch(e => {
+          console.log("Autoplay unmuted/prevented by browser: waiting for user gestures to enable raw audio outputs.", e);
+        });
+      }
+    }
+
+    return () => {
+      if (activeAudio) {
+        activeAudio.pause();
+      }
       setActiveReelAudio(null);
       setActiveReelTime(0);
-    }
-  }, [currentReelIndex]);
+    };
+  }, [buyerFeedTab, currentReelIndex]);
 
   // Comments panel states
   const [showReelCommentListingId, setShowReelCommentListingId] = useState<string | null>(null);
@@ -3775,9 +3811,13 @@ export default function App() {
                                         type="button"
                                         onClick={() => {
                                           if (activeReelAudio) {
-                                            activeReelAudio.pause();
-                                            setActiveReelAudio(null);
-                                            setActiveReelTime(0);
+                                            if (!reelIsPaused) {
+                                              activeReelAudio.pause();
+                                              setReelIsPaused(true);
+                                            } else {
+                                              activeReelAudio.play().catch(e => console.warn("Audio resume failed:", e));
+                                              setReelIsPaused(false);
+                                            }
                                           } else {
                                             const audio = new Audio(currentReel.narration_audio_url);
                                             setActiveReelAudio(audio);
@@ -3788,8 +3828,9 @@ export default function App() {
                                             });
 
                                             audio.addEventListener("ended", () => {
-                                              setActiveReelAudio(null);
-                                              setActiveReelTime(0);
+                                              setReelReplayCount(prev => prev + 1);
+                                              audio.currentTime = 0;
+                                              audio.play().catch(e => console.warn("Auto-loop play failed:", e));
                                             });
 
                                             audio.play().catch(e => console.warn("Audio playback failed:", e));
@@ -3801,7 +3842,7 @@ export default function App() {
                                         }}
                                         className="bg-[#ffa500] hover:bg-amber-500 text-black font-extrabold text-[9px] px-2.5 py-1 rounded inline-flex items-center gap-1 select-none cursor-pointer active:scale-95 transition-all shadow shrink-0"
                                       >
-                                        {activeReelAudio ? (
+                                        {activeReelAudio && !reelIsPaused ? (
                                           <>
                                             <Pause className="w-2.5 h-2.5 fill-black shrink-0" />
                                             <span>Pause</span>
