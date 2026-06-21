@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Heart, 
   ShoppingBag, 
@@ -383,6 +383,74 @@ export default function App() {
   const [buyerSurname, setBuyerSurname] = useState<string>("");
   const [buyerFeedTab, setBuyerFeedTab] = useState<"FEED" | "REELS" | "CART" | "TRACKING" | "PARCELS">("FEED");
   const [buyerTrackingTab, setBuyerTrackingTab] = useState<"ACTIVE" | "PAST">("ACTIVE");
+
+  // Pull-to-refresh state & handlers for buyer feed tabs
+  const [pullDistance, setPullDistance] = useState<number>(0);
+  const [isPulling, setIsPulling] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const pullStartY = useRef<number | null>(null);
+
+  const handlePullTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    if (scrollTop === 0 && !isRefreshing) {
+      pullStartY.current = e.touches[0].clientY;
+      setIsPulling(true);
+    } else {
+      pullStartY.current = null;
+    }
+  };
+
+  const handlePullTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (pullStartY.current === null || isRefreshing) return;
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - pullStartY.current;
+
+    if (diff > 0) {
+      // Applied smooth logarithmic resistance so it feels heavily weighted and premium
+      const distance = Math.min(diff * 0.45, 80);
+      setPullDistance(distance);
+      
+      // If we are actively pulling down at the top, prevent native overflow bounce/trigger default browser gestures
+      if (distance > 8) {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      }
+    } else {
+      setPullDistance(0);
+    }
+  };
+
+  const handlePullTouchEnd = async () => {
+    if (pullStartY.current === null || isRefreshing) return;
+    pullStartY.current = null;
+    setIsPulling(false);
+
+    if (pullDistance >= 50) {
+      setIsRefreshing(true);
+      setPullDistance(50); // Keep indicator cleanly visible during synchronization
+      
+      try {
+        await syncListingsFromServer();
+        setToast({
+          message: "Feed Synchronized",
+          subText: "Listing offers successfully updated with backend state!"
+        });
+      } catch (err) {
+        setToast({
+          message: "Sync Failed",
+          subText: "Could not fetch updated listing data."
+        });
+      } finally {
+        setTimeout(() => {
+          setIsRefreshing(false);
+          setPullDistance(0);
+        }, 800);
+      }
+    } else {
+      setPullDistance(0);
+    }
+  };
 
   // Captions Speech-to-Text dynamic state tracking
   const [activeReelAudio, setActiveReelAudio] = useState<HTMLAudioElement | null>(null);
@@ -3202,7 +3270,28 @@ export default function App() {
 
                       {buyerFeedTab === "FEED" && (
                         /* PERSONALIZED WELCOME SCREEN & ALIGNED PRODUCT GRID FEED */
-                        <div className="flex-1 flex flex-col overflow-y-auto p-4 pb-20 space-y-4 text-left scrollbar-none">
+                        <div 
+                          className="flex-1 flex flex-col overflow-y-auto p-4 pb-20 space-y-4 text-left scrollbar-none relative touch-pan-y"
+                          onTouchStart={handlePullTouchStart}
+                          onTouchMove={handlePullTouchMove}
+                          onTouchEnd={handlePullTouchEnd}
+                        >
+                          {/* Pull-to-refresh visualization */}
+                          {(pullDistance > 0 || isRefreshing) && (
+                            <div 
+                              className="w-full flex flex-col items-center justify-center pointer-events-none transition-all duration-75 shrink-0 select-none"
+                              style={{ 
+                                height: `${pullDistance}px`, 
+                                opacity: pullDistance > 10 ? Math.min(pullDistance / 50, 1) : 0,
+                                marginBottom: pullDistance > 0 ? "8px" : "0px" 
+                              }}
+                            >
+                              <div className="flex items-center gap-2 bg-zinc-900/90 border border-zinc-800 text-teal-400 px-3.5 py-2 rounded-full shadow-lg backdrop-blur-md text-[10px] font-bold font-mono tracking-wider">
+                                <RefreshCw className={`w-3.5 h-3.5 text-teal-400 ${isRefreshing ? "animate-spin" : ""}`} style={{ transform: isRefreshing ? "none" : `rotate(${pullDistance * 6}deg)` }} />
+                                <span>{isRefreshing ? "SYNCING FEED..." : pullDistance >= 50 ? "RELEASE TO SYNC" : "PULL TO REFRESH"}</span>
+                              </div>
+                            </div>
+                          )}
                           
                           {/* Rich Custom Greeting Card */}
                           <div className="bg-gradient-to-br from-teal-950/20 via-zinc-950 to-zinc-950 border border-zinc-850 p-4 rounded-2xl relative overflow-hidden shrink-0">
