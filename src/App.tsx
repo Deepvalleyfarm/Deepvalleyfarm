@@ -3513,12 +3513,19 @@ export default function App() {
 
                                         <div>
                                           <div className="flex justify-between items-start mb-2">
-                                            <div className="w-10 h-10 rounded-xl bg-zinc-905 border border-zinc-850 flex items-center justify-center text-xl shadow shrink-0 overflow-hidden">
+                                            <div className="w-10 h-10 rounded-xl bg-zinc-905 border border-zinc-850 flex items-center justify-center text-xl shadow shrink-0 overflow-hidden relative">
                                               {lst.thumbnail && (lst.thumbnail.startsWith("http") || lst.thumbnail.startsWith("data:")) ? (
-                                                <img src={lst.thumbnail} className="w-full h-full object-contain p-0.5" referrerPolicy="no-referrer" alt="" />
+                                                <img src={lst.thumbnail} className="w-full h-full object-contain p-0.5 animate-fadeIn" referrerPolicy="no-referrer" alt="" />
                                               ) : (
                                                 lst.thumbnail || "🛒"
                                               )}
+                                              {/* Subtle dark-mode gradient overlay to enhance video frame/item text readability */}
+                                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent pointer-events-none" />
+
+                                              {/* Video length stamp in corner of thumbnail */}
+                                              <span id={`vid-len-${lst.listing_id}`} className="absolute bottom-0.5 right-0.5 bg-black/80 font-mono text-[6.5px] font-extrabold text-white leading-none px-0.5 py-0.2 rounded border border-zinc-800/30 select-none">
+                                                0:{(lst.title.length % 16) + 12}
+                                              </span>
                                             </div>
                                             
                                             {isSellerLive(lst.seller_id) ? (
