@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Home, ClipboardList, Play, CirclePlay, Coins, MoreHorizontal, LogOut, ShieldCheck, ShoppingBag, Package } from "lucide-react";
+import { Home, ClipboardList, Play, CirclePlay, Coins, MoreHorizontal, LogOut, ShieldCheck, ShoppingBag, Package, BarChart3 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 // Import Modular Sub-components
@@ -10,6 +10,7 @@ import SellerAddListing from "./SellerAddListing";
 import SellerOrders from "./SellerOrders";
 import SellerEarnings from "./SellerEarnings";
 import SellerMoreModules from "./SellerMoreModules";
+import SellerAnalytics from "./SellerAnalytics";
 import ParcelsModule from "../ParcelsModule";
 
 import { Listing, Order, SavedLocation, ParcelJob, AdminConfig } from "../../types";
@@ -55,8 +56,8 @@ export default function SellerPortalRoot({
   const [sellerIsLoggedIn, setSellerIsLoggedIn] = useState<boolean>(false);
   const [sellerPinCode, setSellerPinCode] = useState<string>("2580"); // default sandbox pin
 
-  // Navigation tab states: HOME, ORDERS, LISTINGS, EARNINGS, MORE, PARCELS
-  const [sellerTab, setSellerTab] = useState<"HOME" | "ORDERS" | "LISTINGS" | "EARNINGS" | "MORE" | "PARCELS">("HOME");
+  // Navigation tab states: HOME, ORDERS, LISTINGS, EARNINGS, MORE, PARCELS, ANALYTICS
+  const [sellerTab, setSellerTab] = useState<"HOME" | "ORDERS" | "LISTINGS" | "EARNINGS" | "MORE" | "PARCELS" | "ANALYTICS">("HOME");
 
   // State trigger for active media AI pipeline simulation
   const [isUploadingNewListing, setIsUploadingNewListing] = useState<boolean>(false);
@@ -152,6 +153,7 @@ export default function SellerPortalRoot({
       case "HOME": return "Merchant pulse check";
       case "ORDERS": return "Escrow Fulfillment Queue";
       case "LISTINGS": return "Produce Listings";
+      case "ANALYTICS": return "Business Intelligence Portal";
       case "EARNINGS": return "Earnings Settlement Wallet";
       case "MORE": return "Extended Merchant Desk";
       case "PARCELS": return "Selonachipa Customer Parcels";
@@ -234,6 +236,14 @@ export default function SellerPortalRoot({
                   />
                 )}
 
+                {sellerTab === "ANALYTICS" && (
+                  <SellerAnalytics
+                    listings={listings}
+                    orders={orders}
+                    sellerStoreName={sellerStoreName}
+                  />
+                )}
+
                 {sellerTab === "EARNINGS" && (
                   <SellerEarnings
                     sellerBalance={sellerBalance}
@@ -306,11 +316,12 @@ export default function SellerPortalRoot({
 
           {/* Persistent Sticky Bottom Navigation Bar (as requested across all views) */}
           {!isUploadingNewListing && (
-            <div className="absolute inset-x-0 bottom-0 bg-zinc-950/90 [backdrop-filter:blur(8px)] border-t border-zinc-900 py-2 px-1.5 flex justify-around items-center shrink-0 z-40">
+            <div className="absolute inset-x-0 bottom-0 bg-zinc-950/90 [backdrop-filter:blur(8px)] border-t border-zinc-900 py-2 px-1 flex justify-around items-center shrink-0 z-40">
               {[
                 { id: "HOME", label: "Home", icon: Home },
                 { id: "ORDERS", label: "Orders", icon: ClipboardList, count: orders.filter(o => o.seller_id === "sel-chipo" && o.transit_status === "pending_seller_confirmation").length },
                 { id: "LISTINGS", label: "Listings", icon: Play },
+                { id: "ANALYTICS", label: "Analytics", icon: BarChart3 },
                 { id: "PARCELS", label: "Parcels", icon: Package },
                 { id: "EARNINGS", label: "Earnings", icon: Coins },
                 { id: "MORE", label: "More", icon: MoreHorizontal, count: totalActionBadges }
@@ -324,21 +335,21 @@ export default function SellerPortalRoot({
                       setSellerTab(tab.id as any);
                       setActiveChatConversationId(null); // click resets chat focus
                     }}
-                    className={`flex flex-col items-center justify-center py-1 px-3.5 rounded-xl transition-all cursor-pointer relative ${
+                    className={`flex flex-col items-center justify-center py-1 px-1.5 rounded-xl transition-all cursor-pointer relative ${
                       active 
                         ? "text-[#ffa500] bg-[#ffa500]/5 scale-105" 
                         : "text-zinc-500 hover:text-zinc-300"
                     }`}
                   >
                     <div className="relative">
-                      <IconComponent className={`w-5 h-5 ${active ? "stroke-[2.5px]" : "stroke-[2px]"}`} />
+                      <IconComponent className={`w-[18px] h-[18px] ${active ? "stroke-[2.5px]" : "stroke-[2px]"}`} />
                       {tab.count ? (
-                        <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white font-mono text-[7.5px] font-black w-3.5 h-3.5 shrink-0 rounded-full flex items-center justify-center border border-zinc-950">
+                        <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white font-mono text-[7px] font-black w-3.5 h-3.5 shrink-0 rounded-full flex items-center justify-center border border-zinc-950">
                           {tab.count}
                         </span>
                       ) : null}
                     </div>
-                    <span className="text-[9px] font-bold mt-1 font-sans">{tab.label}</span>
+                    <span className="text-[8px] font-bold mt-1 font-sans">{tab.label}</span>
                   </button>
                 );
               })}
