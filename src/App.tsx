@@ -460,6 +460,9 @@ export default function App() {
   // Floating emojis support
   const [floatingEmojis, setFloatingEmojis] = useState<Array<{ id: number; emoji: string; x: number; rotate: number; rotateSpeed: number }>>([]);
   
+  // Localized state for item price drop notification preferences
+  const [priceDropAlerts, setPriceDropAlerts] = useState<string[]>([]);
+  
   // Theme Toggle: true for high-contrast sunlight light theme, false for default midnight dark theme
   const [isLightTheme, setIsLightTheme] = useState<boolean>(false);
 
@@ -3562,34 +3565,70 @@ export default function App() {
                                                 K {lst.suggested_price}
                                               </span>
                                               
-                                              {/* React Share Counter Indicator */}
-                                              <div className="flex items-center gap-1 mt-0.5">
-                                                <button
-                                                  type="button"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setListings(prev => prev.map(l => l.listing_id === lst.listing_id ? { ...l, shares: (l.shares || 0) + 1 } : l));
-                                                    
-                                                    const deepLink = `${window.location.origin}/?listing=${lst.listing_id}`;
-                                                    navigator.clipboard.writeText(deepLink).then(() => {
-                                                      setToast({
-                                                        message: "LINK COPIED TO CLIPBOARD",
-                                                        subText: `Deep link to "${lst.title}" copied for social sharing!`
+                                              {/* React Share Counter Indicator & Price Drop bell */}
+                                              <div className="flex flex-col gap-1.5 mt-1">
+                                                <div className="flex items-center gap-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      setListings(prev => prev.map(l => l.listing_id === lst.listing_id ? { ...l, shares: (l.shares || 0) + 1 } : l));
+                                                      
+                                                      const deepLink = `${window.location.origin}/?listing=${lst.listing_id}`;
+                                                      navigator.clipboard.writeText(deepLink).then(() => {
+                                                        setToast({
+                                                          message: "LINK COPIED TO CLIPBOARD",
+                                                          subText: `Deep link to "${lst.title}" copied for social sharing!`
+                                                        });
+                                                      }).catch(err => {
+                                                        console.warn("Clipboard write failed: ", err);
+                                                        setToast({
+                                                          message: "LINK READY TO SHARE",
+                                                          subText: deepLink
+                                                        });
                                                       });
-                                                    }).catch(err => {
-                                                      console.warn("Clipboard write failed: ", err);
-                                                      setToast({
-                                                        message: "LINK READY TO SHARE",
-                                                        subText: deepLink
-                                                      });
-                                                    });
-                                                  }}
-                                                  className="p-1 rounded bg-zinc-900 border border-zinc-800 text-teal-400 hover:text-teal-305 hover:bg-zinc-800 transition-all cursor-pointer flex items-center justify-center active:scale-95"
-                                                  title="Share listing deep link"
-                                                >
-                                                  <Share2 className="w-3.5 h-3.5" />
-                                                </button>
-                                                <span className="text-[8.5px] font-mono text-zinc-500 font-bold">{(lst.shares || 0)} shares</span>
+                                                    }}
+                                                    className="p-1 rounded bg-zinc-900 border border-zinc-800 text-teal-400 hover:text-teal-305 hover:bg-zinc-800 transition-all cursor-pointer flex items-center justify-center active:scale-95"
+                                                    title="Share listing deep link"
+                                                  >
+                                                    <Share2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <span className="text-[8.5px] font-mono text-zinc-500 font-bold">{(lst.shares || 0)} shares</span>
+                                                </div>
+
+                                                <div className="flex items-center gap-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const isAlertActive = priceDropAlerts.includes(lst.listing_id);
+                                                      if (isAlertActive) {
+                                                        setPriceDropAlerts(prev => prev.filter(id => id !== lst.listing_id));
+                                                        setToast({
+                                                          message: "ALERT DISABLED",
+                                                          subText: `You won't receive price drop alerts for "${lst.title}".`
+                                                        });
+                                                      } else {
+                                                        setPriceDropAlerts(prev => [...prev, lst.listing_id]);
+                                                        setToast({
+                                                          message: "ALERT ENABLED",
+                                                          subText: `We will alert you when "${lst.title}" drops in price!`
+                                                        });
+                                                      }
+                                                    }}
+                                                    className={`p-1 rounded border transition-all cursor-pointer flex items-center justify-center active:scale-95 ${
+                                                      priceDropAlerts.includes(lst.listing_id)
+                                                        ? "bg-amber-500/10 border-amber-500/35 text-[#ffa500]"
+                                                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                                                    }`}
+                                                    title={priceDropAlerts.includes(lst.listing_id) ? "Disable Price Drop Alert" : "Enable Price Drop Alert"}
+                                                  >
+                                                    <Bell className={`w-3.5 h-3.5 ${priceDropAlerts.includes(lst.listing_id) ? "animate-bounce fill-current" : ""}`} />
+                                                  </button>
+                                                  <span className="text-[8.5px] font-mono text-zinc-500 font-bold">
+                                                    {priceDropAlerts.includes(lst.listing_id) ? "Alert active" : "Price Alert"}
+                                                  </span>
+                                                </div>
                                               </div>
                                             </div>
                                             
