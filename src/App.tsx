@@ -383,6 +383,7 @@ export default function App() {
   const [buyerSurname, setBuyerSurname] = useState<string>("");
   const [buyerFeedTab, setBuyerFeedTab] = useState<"FEED" | "REELS" | "CART" | "TRACKING" | "PARCELS">("FEED");
   const [buyerTrackingTab, setBuyerTrackingTab] = useState<"ACTIVE" | "PAST">("ACTIVE");
+  const [buyerSearchQuery, setBuyerSearchQuery] = useState<string>("");
 
   // Pull-to-refresh state & handlers for buyer feed tabs
   const [pullDistance, setPullDistance] = useState<number>(0);
@@ -3327,6 +3328,26 @@ export default function App() {
                             </div>
                           </div>
 
+                          {/* Search Bar */}
+                          <div className="relative shrink-0">
+                            <input
+                              type="text"
+                              value={buyerSearchQuery}
+                              onChange={(e) => setBuyerSearchQuery(e.target.value)}
+                              placeholder="Search listings by title, seller, or category..."
+                              className="w-full bg-[#0c0d12] border border-zinc-850 focus:border-teal-500 rounded-xl py-2.5 pl-9 pr-8 text-xs font-medium text-white placeholder-zinc-500 focus:outline-none transition-all shadow-inner font-sans"
+                            />
+                            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-3.5" />
+                            {buyerSearchQuery && (
+                              <button
+                                onClick={() => setBuyerSearchQuery("")}
+                                className="absolute right-3 top-3 px-1 text-zinc-500 hover:text-white text-xs font-bold leading-none cursor-pointer"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+
                           {/* Dynamic Scrollable Category Badges */}
                           <div className="space-y-1.5 shrink-0">
                             <div className="flex items-center justify-between px-1">
@@ -3401,21 +3422,29 @@ export default function App() {
                             </div>
 
                             {(() => {
-                              const activeListings = getPersonalizedListings().filter(l => 
-                                selectedFeedCategory === "ALL" || l.category === selectedFeedCategory
-                              );
+                              const activeListings = getPersonalizedListings().filter(l => {
+                                const categoryMatch = selectedFeedCategory === "ALL" || l.category === selectedFeedCategory;
+                                const searchMatch = !buyerSearchQuery || (
+                                  l.title.toLowerCase().includes(buyerSearchQuery.toLowerCase()) ||
+                                  l.category.toLowerCase().includes(buyerSearchQuery.toLowerCase()) ||
+                                  getStoreName(l.seller_id).toLowerCase().includes(buyerSearchQuery.toLowerCase())
+                                );
+                                return categoryMatch && searchMatch;
+                              });
                               if (activeListings.length === 0) {
                                   return (
                                     <div className="bg-[#0c0d12] border border-zinc-850 p-6 rounded-2xl text-center text-zinc-500">
                                       <p className="text-xs font-bold text-white">No items found</p>
-                                      <p className="text-[10px] text-zinc-500 mt-1">Please try modifying your category badges.</p>
+                                      <p className="text-[10px] text-zinc-500 mt-1">
+                                        {buyerSearchQuery ? "Try a different search keyword or category filter." : "Please try modifying your category badges."}
+                                      </p>
                                     </div>
                                   );
                               }
 
                               return (
                                 <div className="grid grid-cols-2 gap-2.5">
-                                  {activeListings.map((lst, idx) => {
+                                  {activeListings.map((lst) => {
                                     const isPreferred = buyerInterests.some(interest => {
                                       const intLower = interest.toLowerCase();
                                       const catLower = lst.category.toLowerCase();
@@ -3426,7 +3455,10 @@ export default function App() {
                                       <div
                                         key={lst.listing_id}
                                         onClick={() => {
-                                          setCurrentReelIndex(idx);
+                                          const fullIndex = getPersonalizedListings().findIndex(item => item.listing_id === lst.listing_id);
+                                          if (fullIndex !== -1) {
+                                            setCurrentReelIndex(fullIndex);
+                                          }
                                           setBuyerFeedTab("REELS");
                                           setToast({
                                             message: `Playing Product Reel`,
