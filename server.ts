@@ -9,6 +9,7 @@ import RunwayML from "@runwayml/sdk";
 import fs from "fs";
 import { initializeApp as initClientApp } from "firebase/app";
 import { getFirestore as getClientFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "firebase/firestore";
+import batchGroupingRouter from "./server/BatchGroupingService";
 
 dotenv.config();
 
@@ -2907,6 +2908,8 @@ app.get("/api/lipila/check-status", async (req, res) => {
     return res.status(500).json({ error: err.message || "Failed to verify transaction status" });
   }
 });
+
+app.use(batchGroupingRouter);
 
 // Vite server integrations
 async function startServer() {
