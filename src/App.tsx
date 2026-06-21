@@ -3657,6 +3657,29 @@ export default function App() {
                                   <span>Verified Seller</span>
                                 </span>
                               </div>
+
+                              {/* Live Audio Narration Countdown Timer Overlay */}
+                              {activeReelAudio && (
+                                (() => {
+                                  const duration = activeReelAudio && !isNaN(activeReelAudio.duration) && isFinite(activeReelAudio.duration) && activeReelAudio.duration > 0
+                                    ? activeReelAudio.duration
+                                    : (currentReel.subtitles && currentReel.subtitles.length > 0 
+                                        ? Math.max(...currentReel.subtitles.map(s => s.end))
+                                        : 30);
+                                  const remainingSeconds = Math.max(0, Math.ceil(duration - activeReelTime));
+                                  return (
+                                    <div className="absolute top-16 left-4 z-30 pointer-events-none select-none flex items-center gap-1.5 bg-black/80 backdrop-blur-md text-[9px] font-mono font-black text-white px-3 py-1 rounded-full shadow-xl border border-white/10 tracking-widest uppercase">
+                                      <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                                      </span>
+                                      <Clock className="w-2.5 h-2.5 text-rose-400 shrink-0" />
+                                      <span>NARRATION:</span>
+                                      <span className="text-[#ffa500] font-black">{remainingSeconds}s left</span>
+                                    </div>
+                                  );
+                                })()
+                              )}
                               
                               {/* Visual Simulated Video Screen */}
                               <div 
