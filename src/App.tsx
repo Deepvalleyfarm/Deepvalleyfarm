@@ -3569,23 +3569,25 @@ export default function App() {
                                                   onClick={(e) => {
                                                     e.stopPropagation();
                                                     setListings(prev => prev.map(l => l.listing_id === lst.listing_id ? { ...l, shares: (l.shares || 0) + 1 } : l));
-                                                    if (navigator.share) {
-                                                      navigator.share({
-                                                        title: lst.title,
-                                                        text: lst.description,
-                                                        url: window.location.href
-                                                      }).catch(err => console.log(err));
-                                                    } else {
+                                                    
+                                                    const deepLink = `${window.location.origin}/?listing=${lst.listing_id}`;
+                                                    navigator.clipboard.writeText(deepLink).then(() => {
                                                       setToast({
                                                         message: "LINK COPIED TO CLIPBOARD",
-                                                        subText: `Shared ${lst.title} successfully!`
+                                                        subText: `Deep link to "${lst.title}" copied for social sharing!`
                                                       });
-                                                    }
+                                                    }).catch(err => {
+                                                      console.warn("Clipboard write failed: ", err);
+                                                      setToast({
+                                                        message: "LINK READY TO SHARE",
+                                                        subText: deepLink
+                                                      });
+                                                    });
                                                   }}
-                                                  className="p-0.5 rounded bg-zinc-900 border border-zinc-800 text-teal-400 hover:text-teal-300 hover:bg-zinc-800 transition-all cursor-pointer flex items-center justify-center"
-                                                  title="Share listing"
+                                                  className="p-1 rounded bg-zinc-900 border border-zinc-800 text-teal-400 hover:text-teal-305 hover:bg-zinc-800 transition-all cursor-pointer flex items-center justify-center active:scale-95"
+                                                  title="Share listing deep link"
                                                 >
-                                                  <Share2 className="w-3 h-3" />
+                                                  <Share2 className="w-3.5 h-3.5" />
                                                 </button>
                                                 <span className="text-[8.5px] font-mono text-zinc-500 font-bold">{(lst.shares || 0)} shares</span>
                                               </div>
