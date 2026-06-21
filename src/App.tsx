@@ -3482,7 +3482,7 @@ export default function App() {
                               }
 
                               return (
-                                <div className="grid grid-cols-2 gap-2.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   {activeListings.map((lst) => {
                                     const isPreferred = buyerInterests.some(interest => {
                                       const intLower = interest.toLowerCase();
@@ -3491,8 +3491,12 @@ export default function App() {
                                     });
 
                                     return (
-                                      <div
+                                      <motion.div
                                         key={lst.listing_id}
+                                        initial={{ opacity: 0, y: 15 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.35, ease: "easeOut" }}
+                                        whileHover={{ y: -2, transition: { duration: 0.2 } }}
                                         onClick={() => {
                                           const fullIndex = getPersonalizedListings().findIndex(item => item.listing_id === lst.listing_id);
                                           if (fullIndex !== -1) {
@@ -3654,7 +3658,7 @@ export default function App() {
                                             </div>
                                           </div>
                                         </div>
-                                      </div>
+                                      </motion.div>
                                     );
                                   })}
                                 </div>
