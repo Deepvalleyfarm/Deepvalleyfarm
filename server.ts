@@ -1328,14 +1328,14 @@ app.post("/api/gemini/generate-background", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("AI Background Generation Error:", error);
-    // Graceful error fallback
+    // Graceful error fallback for unpaid accounts or API access issues - log as warning/info to prevent trace pollution
+    console.log("AI Background Generation fell back to curated scene. Issue:", error.message || String(error));
     return res.json({
       imageUrl: fallbackUrl,
       prompt,
       isMock: true,
       engine: chosenEngine,
-      warning: "Simulated high-quality environment loaded.",
+      warning: "Professionally curated Zambian background loaded as a high-quality fallback.",
       errorDetails: error.message || String(error)
     });
   }

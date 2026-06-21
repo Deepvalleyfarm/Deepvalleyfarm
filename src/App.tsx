@@ -1783,7 +1783,19 @@ export default function App() {
 
                   {/* HEADER SYSTEM */}
                   <div className="flex justify-between items-center text-[10px] font-bold text-zinc-500 tracking-wider">
-                    <span>SELONACHIPA {selectedRole} PORTAL</span>
+                    {buyerSignupStep > 0 && !isBuyerLoginMode ? (
+                      <button
+                        onClick={() => {
+                          setBuyerSignupStep(prev => prev - 1);
+                        }}
+                        className="flex items-center gap-1.5 text-zinc-400 hover:text-white cursor-pointer transition-colors"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>BACK TO {buyerSignupStep === 1 ? "ROLE SELECT" : `STEP ${buyerSignupStep - 1}`}</span>
+                      </button>
+                    ) : (
+                      <span>SELONACHIPA {selectedRole} PORTAL</span>
+                    )}
                     <span className="font-mono text-blue-500">
                       {isBuyerLoginMode ? "SECURED LOGIN" : `STEP ${buyerSignupStep} OF ${selectedRole === "BUYER" ? 7 : 4}`}
                     </span>
