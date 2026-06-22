@@ -4,6 +4,7 @@ import {
   Wallet, ShieldCheck, Flame, ArrowUpRight, Check, X, CreditCard, Clock, Calendar 
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { WithdrawalModal } from "../WithdrawalModal";
 
 interface RiderEarningsProps {
   todayEarnings: number;
@@ -32,6 +33,7 @@ export const RiderEarnings: React.FC<RiderEarningsProps> = ({
   const [simulatedStatementData, setSimulatedStatementData] = useState<any[] | null>(null);
 
   const [isWithdrawing, setIsWithdrawing] = useState<boolean>(false);
+  const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState<boolean>(false);
   const [payoutConfirmedToast, setPayoutConfirmedToast] = useState<boolean>(false);
 
   // Math
@@ -58,15 +60,7 @@ export const RiderEarnings: React.FC<RiderEarningsProps> = ({
 
   const handleTriggerWithdrawNow = () => {
     if (todayEarnings <= 0) return;
-    setIsWithdrawing(true);
-    setTimeout(() => {
-      onTriggerWithdraw(todayEarnings);
-      setIsWithdrawing(false);
-      setPayoutConfirmedToast(true);
-      setTimeout(() => {
-        setPayoutConfirmedToast(false);
-      }, 4000);
-    }, 2000);
+    setIsWithdrawalModalOpen(true);
   };
 
   const handleGenerateStatement = (e: React.FormEvent) => {
@@ -349,6 +343,21 @@ export const RiderEarnings: React.FC<RiderEarningsProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      <WithdrawalModal
+        isOpen={isWithdrawalModalOpen}
+        onClose={() => setIsWithdrawalModalOpen(false)}
+        role="rider"
+        availableBalance={todayEarnings}
+        onWithdrawSuccess={(amount) => {
+          onTriggerWithdraw(amount);
+          setIsWithdrawalModalOpen(false);
+          setPayoutConfirmedToast(true);
+          setTimeout(() => {
+            setPayoutConfirmedToast(false);
+          }, 4500);
+        }}
+      />
 
     </div>
   );

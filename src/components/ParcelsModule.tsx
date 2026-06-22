@@ -36,6 +36,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { SavedLocation, ParcelJob, AdminConfig } from "../types";
 import { searchPlacesAutocomplete, geocodeAddress, calculateDeliveryFee, hasValidGoogleMapsKey, getGoogleMapsApiKey } from "../services/googleMapsService";
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from "@vis.gl/react-google-maps";
+import PayoutAdminPanel from "./payout/PayoutAdminPanel";
 
 interface ParcelsModuleProps {
   userRole: "BUYER" | "SELLER" | "AGENT";
@@ -1698,6 +1699,11 @@ export default function ParcelsModule({
                 Sync Admin Configurations
               </button>
 
+            </div>
+
+            {/* Live Disbursement Admin Control Panel and Webhook Handshake Logs */}
+            <div className="mt-6">
+              <PayoutAdminPanel onSpawnToast={onSpawnToast} />
             </div>
           </div>
         )}

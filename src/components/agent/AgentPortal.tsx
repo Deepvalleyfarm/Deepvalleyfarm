@@ -9,6 +9,7 @@ import { Listing, Order, SavedLocation, ParcelJob, LedgerRecord, Rider } from ".
 import SeloWizard from "../SeloWizard";
 import { hasValidGoogleMapsKey, getGoogleMapsApiKey, computeRoute } from "../../services/googleMapsService";
 import { APIProvider, Map as GoogleMap, AdvancedMarker, Pin } from "@vis.gl/react-google-maps";
+import { WithdrawalModal } from "../WithdrawalModal";
 
 interface AgentPortalProps {
   orders: Order[];
@@ -1763,91 +1764,32 @@ export default function AgentPortal({
       </AnimatePresence>
 
       {/* 6C: WITHDRAWAL FUNDS CASH-OUT OVERLAY POPUP */}
-      <AnimatePresence>
-        {isWithdrawOpen && (
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#0c0d12] border border-zinc-850 rounded-3xl p-5 max-w-[325px] w-full text-left space-y-4 shadow-2xl animate-fade"
-            >
-              <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
-                <span className="text-xs uppercase font-mono font-bold text-[#ffa500]">Withdraw safe balances</span>
-                <button
-                  onClick={() => setIsWithdrawOpen(false)}
-                  className="text-zinc-400 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-3.5 text-xs">
-                <div className="space-y-1.5">
-                  <label className="text-[9.5px] text-zinc-550 block font-mono">CHOOSE MOBILE MONEY NETWORK</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {["Airtel", "MTN", "Zamtel"].map(op => (
-                      <button
-                        key={op}
-                        type="button"
-                        onClick={() => setWithdrawProvider(op as any)}
-                        className={`py-1.5 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
-                          withdrawProvider === op 
-                            ? "bg-purple-500/10 border-purple-500 text-purple-400"
-                            : "bg-[#050506] border-zinc-850 text-zinc-400 hover:text-zinc-300"
-                        }`}
-                      >
-                        {op}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9.5px] text-zinc-550 block font-mono">CASH OUT PHONE NUMBER</label>
-                  <input
-                    type="text"
-                    value={withdrawPhone}
-                    onChange={(e) => setWithdrawPhone(e.target.value)}
-                    className="w-full bg-[#050506] border border-zinc-850 px-2.5 py-1.5 text-xs text-white font-mono rounded-lg focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9.5px] text-zinc-550 block font-mono">SPECIFIED AMOUNT IN ZMW</label>
-                  <input
-                    type="number"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-[#050506] border border-zinc-550 px-2.5 py-1.5 text-xs text-white font-mono font-bold rounded-lg focus:outline-none"
-                  />
-                </div>
-
-                <div className="bg-[#050506] p-2.5 rounded-lg border border-zinc-900 text-[10px] font-mono text-zinc-500 leading-normal">
-                  Automatic disbursement settled in real time, no hold duration, fully recorded under transactional audits.
-                </div>
-              </div>
-
-              <div className="flex gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setIsWithdrawOpen(false)}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs py-2 rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleProcessWithdraw}
-                  className="flex-1 bg-emerald-500 text-black font-extrabold text-xs py-2 rounded-xl cursor-pointer transition-all active:scale-97"
-                >
-                  Confirm cash-out
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <WithdrawalModal
+        isOpen={isWithdrawOpen}
+        onClose={() => setIsWithdrawOpen(false)}
+        role="agent"
+        availableBalance={agentCommission}
+        onWithdrawSuccess={(amount) => {
+          setAgentCommission(prev => Math.max(0, prev - amount));
+          
+          // Record ledger outflow log for compliance
+          const outTx: LedgerRecord = {
+            tx_id: `TX-WD-${Math.floor(Math.random() * 900000 + 100000)}`,
+            order_id: `ORDER-WD-${Math.floor(Math.random() * 900 + 100)}`,
+            amount_zmw: amount,
+            action: "AGENT_COMMISSION_CASHOUT",
+            payout_destination: `Lipila Verified Agent Disbursement`,
+            timestamp: new Date().toISOString()
+          };
+          setLedger(prev => [outTx, ...prev]);
+          setIsWithdrawOpen(false);
+          
+          onSpawnToast({
+            message: "Withdrawal Created ✓",
+            subText: `K ${amount.toFixed(2)} ZMW sent instantly through Lipila to your agent wallet.`
+          });
+        }}
+      />
 
     </div>
   );

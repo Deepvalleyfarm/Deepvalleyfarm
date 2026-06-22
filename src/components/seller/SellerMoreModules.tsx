@@ -2,10 +2,11 @@ import React, { useState } from "react";
 import { 
   MessageSquare, BarChart2, User, Users, Bell, Settings, HelpCircle, 
   ArrowLeft, Search, Plus, Trash2, Camera, ShieldCheck, Mail, Send, 
-  MapPin, Check, Edit2, Phone, Smile, Calendar, ExternalLink, RefreshCw, LogOut 
+  MapPin, Check, Edit2, Phone, Smile, Calendar, ExternalLink, RefreshCw, LogOut, Coins
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Listing } from "../../types";
+import SubscriptionCreditsSubModule from "./SubscriptionCreditsSubModule";
 
 interface SellerMoreModulesProps {
   onBackToMenu: () => void;
@@ -84,6 +85,7 @@ export default function SellerMoreModules({
 
   // Sub-modules checklist configuration
   const modulesGrid = [
+    { id: "SUBSCRIPTION", label: "Subscriptions & Credits", desc: "Pay plans & recharge credits via Card/MoMo", icon: Coins, iconColor: "text-amber-400" },
     { id: "MESSAGES", label: "Message Inbox", desc: "Buyer chats & inquiries", icon: MessageSquare, badge: buyerMessages.filter(c => c.unread > 0).length, iconColor: "text-blue-400" },
     { id: "ANALYTICS", label: "Business Analytics", desc: "Views & neighborhood stats", icon: BarChart2, iconColor: "text-purple-400" },
     { id: "PROFILE", label: "Store Public Profile", desc: "Logo, Location & NRC verification", icon: User, iconColor: "text-emerald-400" },
@@ -1053,6 +1055,10 @@ export default function SellerMoreModules({
                   </div>
                 </div>
               </div>
+            )}
+
+            {activeModule === "SUBSCRIPTION" && (
+              <SubscriptionCreditsSubModule setToast={setToast} onBack={() => setActiveModule(null)} />
             )}
           </motion.div>
         )}

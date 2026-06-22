@@ -385,6 +385,96 @@ export default function App() {
   const [buyerTrackingTab, setBuyerTrackingTab] = useState<"ACTIVE" | "PAST">("ACTIVE");
   const [buyerSearchQuery, setBuyerSearchQuery] = useState<string>("");
 
+  // Voice-activated Speech Search states
+  const [voiceSearchIsListening, setVoiceSearchIsListening] = useState<boolean>(false);
+  const [voiceSearchError, setVoiceSearchError] = useState<string>("");
+  const [speechRecInstance, setSpeechRecInstance] = useState<any>(null);
+  const [voiceSearchInterim, setVoiceSearchInterim] = useState<string>("");
+  const [showVoiceFallback, setShowVoiceFallback] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechClass) {
+        try {
+          const rec = new SpeechClass();
+          rec.continuous = false;
+          rec.interimResults = true;
+          rec.lang = "en-US";
+
+          rec.onstart = () => {
+            setVoiceSearchIsListening(true);
+            setVoiceSearchError("");
+            setVoiceSearchInterim("Listening to your voice...");
+          };
+
+          rec.onresult = (event: any) => {
+            let finalTr = "";
+            let interimTr = "";
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              if (event.results[i].isFinal) {
+                finalTr += event.results[i][0].transcript;
+              } else {
+                interimTr += event.results[i][0].transcript;
+              }
+            }
+            if (interimTr) {
+              setVoiceSearchInterim(interimTr);
+            }
+            if (finalTr) {
+              setBuyerSearchQuery(finalTr);
+              setVoiceSearchInterim(finalTr);
+              setToast({
+                message: "Voice Identified 🎙️",
+                subText: `Searching for: "${finalTr}"`
+              });
+            }
+          };
+
+          rec.onerror = (e: any) => {
+            console.warn("Speech API standard error:", e.error);
+            if (e.error === "not-allowed") {
+              setVoiceSearchError("Microphone permissions not allowed in iframe view.");
+            } else {
+              setVoiceSearchError(`Speech issue: ${e.error}`);
+            }
+            // Seamlessly trigger interactive demo fallback
+            setShowVoiceFallback(true);
+            setVoiceSearchIsListening(false);
+          };
+
+          rec.onend = () => {
+            setVoiceSearchIsListening(false);
+          };
+
+          setSpeechRecInstance(rec);
+        } catch (err) {
+          console.error("Speech initialization crashed: ", err);
+        }
+      }
+    }
+  }, []);
+
+  const toggleVoiceSearch = () => {
+    if (!speechRecInstance) {
+      // Browser support missing or in sandboxed context
+      setShowVoiceFallback(true);
+      return;
+    }
+
+    if (voiceSearchIsListening) {
+      speechRecInstance.stop();
+    } else {
+      try {
+        setVoiceSearchInterim("Activating voice system...");
+        speechRecInstance.start();
+      } catch (err) {
+        console.error("Speech start failed", err);
+        setShowVoiceFallback(true);
+      }
+    }
+  };
+
   // Pull-to-refresh state & handlers for buyer feed tabs
   const [pullDistance, setPullDistance] = useState<number>(0);
   const [isPulling, setIsPulling] = useState<boolean>(false);
@@ -1587,6 +1677,304 @@ export default function App() {
       subText: `Merchant earned K${merchantReceivedVal.toFixed(2)}. Rider earned K${earnedTransport.toFixed(2)}.`
     });
   };
+
+  const pathname = window.location.pathname;
+
+  if (pathname === "/payment-processing") {
+    const referenceId = new URLSearchParams(window.location.search).get("referenceId") || `sub-starter-sel_v7_mwansa-${Date.now()}`;
+    const mockSuccess = new URLSearchParams(window.location.search).get("mockSuccess") === "true";
+
+    const PaymentProcessingPage: React.FC = () => {
+      const [errorMsg, setErrorMsg] = useState<string>("");
+
+      useEffect(() => {
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          attempts++;
+          if (attempts > 30) {
+            clearInterval(interval);
+            window.location.href = `/payment-failed?referenceId=${referenceId}&reason=Timeout`;
+            return;
+          }
+          
+          if (mockSuccess && attempts > 1) {
+            clearInterval(interval);
+            try {
+              let amount = 150;
+              if (referenceId.includes("commercial")) amount = 450;
+              if (referenceId.includes("enterprise")) amount = 1200;
+              if (referenceId.includes("copper")) amount = 50;
+              if (referenceId.includes("silver")) amount = 100;
+              if (referenceId.includes("gold")) amount = 250;
+
+              await fetch("/api/payments/lipila-callback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  referenceId,
+                  transactionId: "tx-mock-" + Math.floor(100000 + Math.random() * 900000),
+                  amount,
+                  currency: "ZMW",
+                  status: "Successful",
+                  paymentMethod: "Card",
+                  narration: "Selonachipa Card Escrow Setup"
+                })
+              });
+              window.location.href = `/payment-success?referenceId=${referenceId}`;
+            } catch (e) {
+              setErrorMsg("Failed Mock Callback Sync");
+            }
+            return;
+          }
+
+          try {
+            const res = await fetch(`/api/payments/status?referenceId=${encodeURIComponent(referenceId)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === "Successful" || data.status === "Success" || data.paymentStatus === "Successful" || data.paymentStatus === "Success") {
+                clearInterval(interval);
+                window.location.href = `/payment-success?referenceId=${referenceId}`;
+              } else if (data.status === "Failed" || data.paymentStatus === "Failed") {
+                clearInterval(interval);
+                window.location.href = `/payment-failed?referenceId=${referenceId}&reason=${encodeURIComponent(data.message || "Declined")}`;
+              }
+            }
+          } catch (err) {
+            console.warn("Polling payment status warning:", err);
+          }
+        }, 1500);
+
+        return () => clearInterval(interval);
+      }, []);
+
+      return (
+        <div className="min-h-screen w-full bg-[#050609] text-zinc-100 flex flex-col items-center justify-center p-6 font-sans">
+          <div className="w-full max-w-md bg-[#0c0d12] border border-zinc-900 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative overflow-hidden" id="processing-box">
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex justify-center" id="processing-spinner">
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full" />
+                <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-xl font-black text-white tracking-tight uppercase font-mono">🔒 SECURE ESCROW ENCRYPTION</h2>
+              <p className="text-xs text-zinc-400 font-mono">Analyzing Escrow... Awaiting authorization callback...</p>
+              {errorMsg && <p className="text-xs text-red-400">{errorMsg}</p>}
+            </div>
+
+            <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-900 space-y-1.5 text-left font-mono text-[10.5px]">
+              <div className="flex justify-between">
+                <span className="text-zinc-650">REF INTERNAL:</span>
+                <span className="text-zinc-350 truncate max-w-[200px]">{referenceId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-650">CHANNEL STATUS:</span>
+                <span className="text-amber-400 animate-pulse">POLLING WEBHOOKS</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-650">TUNNEL COMPU:</span>
+                <span className="text-indigo-400">LIPILASECURE_V1</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-zinc-550 leading-relaxed text-center">
+              Do not close this application window or hit back. We are coordinating the locking of your token escrow with the Bank of Zambia security guidelines.
+            </p>
+          </div>
+        </div>
+      );
+    };
+
+    return <PaymentProcessingPage />;
+  }
+
+  if (pathname === "/payment-success") {
+    const referenceId = new URLSearchParams(window.location.search).get("referenceId") || "sub-starter-sel_v7_mwansa-12345";
+    const parts = referenceId.split("-");
+    const prefix = parts[0] || "sub";
+    const typeId = parts[1] || "starter";
+    const tenantId = parts[2] || "Chipo Mwansa";
+
+    const isSub = prefix === "sub";
+    let amountStr = "150.00";
+    let itemTitle = "Starter Farmer Membership";
+    if (isSub) {
+      if (typeId === "commercial") {
+        amountStr = "450.00";
+        itemTitle = "Commercial Grower Gold Plan";
+      } else if (typeId === "enterprise") {
+        amountStr = "1,200.00";
+        itemTitle = "Agri-Business Corporate Annual";
+      }
+    } else {
+      amountStr = typeId === "copper" ? "50.00" : typeId === "silver" ? "100.00" : "250.00";
+      itemTitle = `${typeId.toUpperCase()} Credit Pack (+${typeId === "copper" ? "50" : typeId === "silver" ? "120" : "300"} points)`;
+    }
+
+    const receiptText = `
+==============================================
+         SELONACHIPA FARM LOCK RECEIPT        
+==============================================
+RECP ID: rcp-${referenceId}
+DATE: ${new Date().toLocaleDateString()}
+TENANT ID: ${tenantId.toUpperCase()}
+ALLOCATED ACCESS: ${itemTitle.toUpperCase()}
+ESCROW OUTFLOW: ${amountStr} ZMW
+CURRENCY: ZMW (Zambian Kwacha)
+PAYMENT TYPE: DEBIT/CREDIT CARD
+GATEWAY PROVIDER: LIPILA CARD COLLECTION API
+STATUS: SUCCESSFUL & AUDITED
+SMART CONTRACT INDEX: CHIP-LOCK-${Math.floor(100000 + Math.random() * 900000)}
+==============================================
+Thank you for supporting sustainable farming. 
+Keep this secure document for administrative audit.
+`;
+
+    const PaymentSuccessPage: React.FC = () => {
+      const handleDownloadReceipt = () => {
+        const element = document.createElement("a");
+        const file = new Blob([receiptText], { type: 'text/plain' });
+        element.href = URL.createObjectURL(file);
+        element.download = `SeloNaChipa_Receipt_${referenceId}.txt`;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+      };
+
+      const handleReturn = () => {
+        window.location.href = "/?role=SELLER";
+      };
+
+      return (
+        <div className="min-h-screen w-full bg-[#050609] text-zinc-100 flex flex-col items-center justify-center p-6 font-sans">
+          <div className="w-full max-w-md bg-[#0c0d12] border-2 border-emerald-500/20 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative overflow-hidden" id="success-box">
+            
+            <div className="flex justify-center font-sans font-black tracking-widest text-[#5c7cff]/90 text-[10px]" id="success-icon-wrapper">
+              <div className="w-20 h-20 bg-emerald-550/10 border-2 border-emerald-500/30 rounded-full flex items-center justify-center text-emerald-400">
+                <svg className="w-10 h-10 fill-none stroke-current stroke-[3]" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <h2 className="text-xl font-black text-white uppercase tracking-wide">🏆 Payment Confirmed!</h2>
+              <p className="text-xs text-zinc-400">Escrow reserves released and allocated to your account.</p>
+            </div>
+
+            <div className="bg-[#050608] border border-zinc-900 rounded-2xl p-4 space-y-3.5 text-left text-xs font-mono" id="invoice-details">
+              <div className="border-b border-zinc-800 pb-2 mb-2 flex justify-between items-center text-[10px] text-zinc-500">
+                <span>AUDIT RECEIPT SYSTEM</span>
+                <span className="text-emerald-400">● SECURELY RECORDED</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Allocation Target:</span>
+                <span className="text-white font-bold">{itemTitle}</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Escrow Locked:</span>
+                <span className="text-emerald-400 font-extrabold">K {amountStr} ZMW</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Method Code:</span>
+                <span className="text-zinc-400">Card Payment (Lipila API)</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span className="text-zinc-500">Reference:</span>
+                <span className="text-zinc-350 truncate max-w-[180px]">{referenceId}</span>
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-3" id="success-buttons">
+              <button
+                onClick={handleDownloadReceipt}
+                className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-200 hover:text-white font-extrabold text-[11px] py-3 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 font-sans"
+              >
+                <span>📄 Download Auditable Receipt (.txt)</span>
+              </button>
+              
+              <button
+                onClick={handleReturn}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3 rounded-xl transition-all shadow-lg shadow-emerald-600/10 cursor-pointer text-center"
+              >
+                Return to Merchant Desk →
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return <PaymentSuccessPage />;
+  }
+
+  if (pathname === "/payment-failed") {
+    const referenceId = new URLSearchParams(window.location.search).get("referenceId") || "sub-starter";
+    const reason = new URLSearchParams(window.location.search).get("reason") || "Authorization rejected or transaction declined by your financial institution.";
+
+    const PaymentFailedPage: React.FC = () => {
+      const handleReturn = () => {
+        window.location.href = "/?role=SELLER";
+      };
+
+      return (
+        <div className="min-h-screen w-full bg-[#050609] text-zinc-100 flex flex-col items-center justify-center p-6 font-sans">
+          <div className="w-full max-w-md bg-[#0c0d12] border-2 border-rose-500/20 rounded-3xl p-8 text-center space-y-6 shadow-2xl relative overflow-hidden" id="failed-box">
+            
+            <div className="flex justify-center" id="failed-icon-wrapper">
+              <div className="w-20 h-20 bg-rose-500/10 border-2 border-rose-500/30 rounded-full flex items-center justify-center text-rose-400">
+                <svg className="w-10 h-10 fill-none stroke-current stroke-[3]" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <h2 className="text-xl font-black text-white uppercase tracking-wide">❌ Payment Declined</h2>
+              <p className="text-xs text-rose-400 font-mono text-[11px]">Reason: {reason}</p>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed max-w-sm">
+              Please check your card limit, confirm you have sufficient funds, and ensure your card is activated for 3D Secure online transactions in Zambia.
+            </p>
+
+            <div className="bg-[#0c0d12] border border-zinc-900 leading-relaxed p-4 rounded-xl flex items-center justify-between text-left text-xs gap-3">
+              <div>
+                <p className="font-bold text-white">Need immediate help?</p>
+                <p className="text-[10px] text-zinc-550 leading-snug">Connect with Lipila & Selo team anytime.</p>
+              </div>
+              <a
+                href="https://wa.me/260978070734"
+                target="_blank"
+                referrerPolicy="no-referrer"
+                className="py-1.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold rounded-lg text-[10.5px] transition-colors"
+              >
+                WhatsApp Support
+              </a>
+            </div>
+
+            <div className="flex gap-3 pt-2 pt-2 space-y-3" id="failed-action-buttons">
+              <button
+                onClick={handleReturn}
+                className="w-full bg-zinc-900 border border-zinc-850 hover:bg-zinc-850 text-zinc-200 hover:text-white font-bold text-xs py-3 rounded-xl transition-all cursor-pointer"
+              >
+                Try Another Method
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return <PaymentFailedPage />;
+  }
 
   return (
     <div className="min-h-screen bg-[#08090c] text-zinc-100 flex items-center justify-center p-4 transition-all duration-300" style={{ fontFamily: "Outfit, sans-serif" }}>
@@ -3368,23 +3756,44 @@ export default function App() {
                           </div>
 
                           {/* Search Bar */}
-                          <div className="relative shrink-0">
+                          <div className="relative shrink-0 flex items-center">
                             <input
                               type="text"
                               value={buyerSearchQuery}
                               onChange={(e) => setBuyerSearchQuery(e.target.value)}
                               placeholder="Search listings by title, seller, or category..."
-                              className="w-full bg-[#0c0d12] border border-zinc-850 focus:border-teal-500 rounded-xl py-2.5 pl-9 pr-8 text-xs font-medium text-white placeholder-zinc-500 focus:outline-none transition-all shadow-inner font-sans"
+                              className="w-full bg-[#0c0d12] border border-zinc-850 focus:border-teal-500 rounded-xl py-2.5 pl-9 pr-16 text-xs font-medium text-white placeholder-zinc-500 focus:outline-none transition-all shadow-inner font-sans"
                             />
                             <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-3.5" />
-                            {buyerSearchQuery && (
+                            
+                            <div className="absolute right-3 top-2 flex items-center gap-1.5 z-10">
+                              {buyerSearchQuery && (
+                                <button
+                                  type="button"
+                                  onClick={() => setBuyerSearchQuery("")}
+                                  className="p-1 text-zinc-500 hover:text-white text-xs font-bold leading-none cursor-pointer"
+                                  title="Clear search query"
+                                >
+                                  ✕
+                                </button>
+                              )}
                               <button
-                                onClick={() => setBuyerSearchQuery("")}
-                                className="absolute right-3 top-3 px-1 text-zinc-500 hover:text-white text-xs font-bold leading-none cursor-pointer"
+                                type="button"
+                                onClick={toggleVoiceSearch}
+                                className={`p-1.5 rounded-lg transition-all relative cursor-pointer ${
+                                  voiceSearchIsListening
+                                    ? "bg-red-500/20 text-red-400 animate-pulse"
+                                    : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+                                }`}
+                                title="Voice-Activated Product Search"
                               >
-                                ✕
+                                <Mic className={`w-3.5 h-3.5 ${voiceSearchIsListening ? "text-red-400 shrink-0 animate-bounce" : "shrink-0"}`} />
+                                
+                                {voiceSearchIsListening && (
+                                  <span className="absolute inset-0 rounded-lg border border-red-500/40 animate-ping pointer-events-none" />
+                                )}
                               </button>
-                            )}
+                            </div>
                           </div>
 
                           {/* Dynamic Scrollable Category Badges */}
@@ -6382,6 +6791,144 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* VOICE-ACTIVATED PRODUCT SEARCH MODAL & SOUNDWAVE VISUALIZER */}
+      <AnimatePresence>
+        {(voiceSearchIsListening || showVoiceFallback) && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#0b0c10] border border-zinc-900 rounded-3xl w-full max-w-md p-6 relative overflow-hidden shadow-2xl text-left space-y-6 text-zinc-100"
+            >
+              {/* Top Accent line */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-500 via-[#ffa500] to-red-500 animate-pulse" />
+
+              <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                  <span className="text-xs font-black uppercase tracking-widest font-mono text-zinc-400">
+                    Selo Voice Assistant
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (speechRecInstance && voiceSearchIsListening) {
+                      speechRecInstance.stop();
+                    }
+                    setVoiceSearchIsListening(false);
+                    setShowVoiceFallback(false);
+                  }}
+                  className="text-zinc-500 hover:text-white transition-colors p-1 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Pulsing Visual Waveform */}
+              <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                <div className="flex items-end justify-center gap-1.5 h-16 w-full">
+                  <div className="w-1 bg-teal-400 rounded-full h-8 animate-pulse" style={{ animationDuration: "0.6s" }} />
+                  <div className="w-1 bg-[#ffa500] rounded-full h-12 animate-pulse" style={{ animationDuration: "1s" }} />
+                  <div className="w-1 bg-indigo-500 rounded-full h-16 animate-pulse" style={{ animationDuration: "0.8s" }} />
+                  <div className="w-1 bg-red-500 rounded-full h-10 animate-pulse" style={{ animationDuration: "1.2s" }} />
+                  <div className="w-1 bg-emerald-400 rounded-full h-14 animate-pulse" style={{ animationDuration: "0.7s" }} />
+                  <div className="w-1 bg-[#ffa500] rounded-full h-7 animate-pulse" style={{ animationDuration: "1.1s" }} />
+                </div>
+                
+                <div className="text-center space-y-1">
+                  <p className="text-[10px] uppercase font-mono font-bold text-zinc-400 tracking-widest">
+                    {voiceSearchIsListening ? "Capturing Live Audio..." : "Voice Stream Ready"}
+                  </p>
+                  <p className="text-xs text-[#ffa550] font-mono italic px-4 text-center max-w-sm">
+                    "{voiceSearchInterim || "Try saying: 'Sweet maize' or 'Chitenge skirt'..."}"
+                  </p>
+                </div>
+              </div>
+
+              {/* Error warning block if permission block */}
+              {voiceSearchError && (
+                <div className="bg-amber-500/10 border border-amber-500/15 p-3 rounded-2xl text-[10.5px] font-mono text-amber-400 leading-normal flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                  <div>
+                    <span className="font-bold block uppercase text-[9px] mb-0.5">Microphone Request Denied</span>
+                    Developer environment sandbox has strict web resource policies. Talk into headphones or instantly trigger interactive phrases below!
+                  </div>
+                </div>
+              )}
+
+              {/* Simulated Dictation Options */}
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-500" />
+                  <span className="text-[9.5px] uppercase font-bold text-zinc-400 font-mono tracking-wider">
+                    Instant Dictation Simulation
+                  </span>
+                </div>
+                
+                <p className="text-[10px] text-zinc-500 px-0.5 leading-normal">
+                  No mic? Tap any phrase below to simulate high-fidelity voice dictation instantly inside the marketplace:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-mono">
+                  {[
+                    { label: "Chisamba Sweet Maize", query: "Maize" },
+                    { label: "Fashion & Chitenge Wear", query: "Chitenge" },
+                    { label: "Lusaka Fresh Potatoes", query: "Potato" },
+                    { label: "Copperbelt Organic Honey", query: "Honey" },
+                    { label: "Soweto Market Bream Fish", query: "Fish" },
+                    { label: "Pesticide-free Tomatoes", query: "Tomato" }
+                  ].map((phrase, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setVoiceSearchInterim("Processing vocal frequencies...");
+                        setTimeout(() => {
+                          setVoiceSearchInterim(`"${phrase.label}" (Dictated)`);
+                          setBuyerSearchQuery(phrase.query);
+                          setToast({
+                            message: "Voice Identified 🎙️",
+                            subText: `Filters applied successfully for query: "${phrase.label}"`
+                          });
+                          setTimeout(() => {
+                            setVoiceSearchIsListening(false);
+                            setShowVoiceFallback(false);
+                          }, 1000);
+                        }, 600);
+                      }}
+                      className="bg-zinc-950 border border-zinc-900 hover:border-[#ffa500] hover:bg-zinc-900 text-left py-2 px-3 rounded-xl transition-all flex items-center justify-between text-[11px] text-zinc-350 hover:text-white cursor-pointer group"
+                    >
+                      <span className="truncate">{phrase.label}</span>
+                      <ArrowRight className="w-3 h-3 text-zinc-650 group-hover:text-[#ffa550] shrink-0 ml-1.5 transition-colors" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Close controls */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (speechRecInstance && voiceSearchIsListening) {
+                      speechRecInstance.stop();
+                    }
+                    setVoiceSearchIsListening(false);
+                    setShowVoiceFallback(false);
+                  }}
+                  className="w-full bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-200 font-extrabold text-xs py-2.5 rounded-xl cursor-pointer"
+                >
+                  Close & View Search Result
+                </button>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* GLOBAL PERSISTENT THEME SWITCHER PILL (FLOATING) */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">

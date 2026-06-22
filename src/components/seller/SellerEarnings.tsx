@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Download, AlertTriangle, FileText, CheckCircle2, ShieldCheck, Landmark, ArrowRight, RefreshCw, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { WithdrawalModal } from "../WithdrawalModal";
 
 interface SellerEarningsProps {
   sellerBalance: number;
@@ -20,6 +21,7 @@ export default function SellerEarnings({
   setToast
 }: SellerEarningsProps) {
   const [isProcessingWithdraw, setIsProcessingWithdraw] = useState<boolean>(false);
+  const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState<boolean>(false);
   const [isStatementOpen, setIsStatementOpen] = useState<boolean>(false);
   const [isWithdrawSuccessOpen, setIsWithdrawSuccessOpen] = useState<boolean>(false);
   const [withdrawnAmount, setWithdrawnAmount] = useState<number>(0);
@@ -54,20 +56,7 @@ export default function SellerEarnings({
       });
       return;
     }
-
-    setIsProcessingWithdraw(true);
-    const amount = sellerBalance;
-
-    setTimeout(() => {
-      setWithdrawnAmount(amount);
-      setSellerBalance(0);
-      setIsProcessingWithdraw(false);
-      setIsWithdrawSuccessOpen(true);
-      setToast({
-        message: "Payment Disbursed! ✓",
-        subText: `K ${amount} ZMW was transferred immediately via Lipila to your wallet.`
-      });
-    }, 1800);
+    setIsWithdrawalModalOpen(true);
   };
 
   return (
@@ -288,6 +277,21 @@ export default function SellerEarnings({
           </div>
         )}
       </AnimatePresence>
+
+      <WithdrawalModal
+        isOpen={isWithdrawalModalOpen}
+        onClose={() => setIsWithdrawalModalOpen(false)}
+        role="seller"
+        availableBalance={sellerBalance}
+        onWithdrawSuccess={(amount) => {
+          setSellerBalance(Math.max(0, sellerBalance - amount));
+          setIsWithdrawalModalOpen(false);
+          setToast({
+            message: "Withdrawal Generated ✓",
+            subText: `K ${amount.toFixed(2)} ZMW sent instantly through Lipila to your mobile wallet.`
+          });
+        }}
+      />
     </div>
   );
 }
