@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFF050506) // Very dark background matching the mock-up
                 ) {
-                    var webViewUrl by remember { mutableStateOf<String?>(null) }
+                    var webViewUrl by remember { mutableStateOf<String?>("https://ais-pre-hes63u67hy33o4p2nwlgzv-866799298460.europe-west2.run.app") }
 
                     if (webViewUrl != null) {
                         WebViewScreen(url = webViewUrl!!, onBackToRoles = { webViewUrl = null })

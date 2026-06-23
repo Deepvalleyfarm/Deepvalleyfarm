@@ -393,12 +393,84 @@ export default function App() {
   const [buyerTrackingTab, setBuyerTrackingTab] = useState<"ACTIVE" | "PAST">("ACTIVE");
   const [buyerSearchQuery, setBuyerSearchQuery] = useState<string>("");
 
+  // Is mobile viewport or wrapped in mobile webview/APK
+  const [isMobileOrWebView, setIsMobileOrWebView] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const checkViewport = () => {
+        const ua = navigator.userAgent.toLowerCase();
+        const isMobileUA = /mobile|android|iphone|ipad|phone/i.test(ua);
+        const isSmallScreen = window.innerWidth < 640;
+        setIsMobileOrWebView(isMobileUA || isSmallScreen);
+      };
+      checkViewport();
+      window.addEventListener("resize", checkViewport);
+      return () => window.removeEventListener("resize", checkViewport);
+    }
+  }, []);
+
   // Voice-activated Speech Search states
   const [voiceSearchIsListening, setVoiceSearchIsListening] = useState<boolean>(false);
   const [voiceSearchError, setVoiceSearchError] = useState<string>("");
   const [speechRecInstance, setSpeechRecInstance] = useState<any>(null);
   const [voiceSearchInterim, setVoiceSearchInterim] = useState<string>("");
   const [showVoiceFallback, setShowVoiceFallback] = useState<boolean>(false);
+
+  // Startup Diagnostic check and Session restoration
+  useEffect(() => {
+    console.log("==========================================");
+    console.log("SELONACHIPA METRIC BACKEND LEDGER DIAGNOSTICS");
+    console.log("Time of Check:", new Date().toISOString());
+    
+    // Check URL parameters
+    let queryRole: string | null = null;
+    let rawSearch = "";
+    if (typeof window !== "undefined") {
+      rawSearch = window.location.search;
+      queryRole = new URLSearchParams(window.location.search).get("role");
+    }
+    
+    console.log("Query Parameters Checked:", rawSearch || "(none)");
+    if (queryRole) {
+      console.log("-> URL role parameter detected:", queryRole);
+    } else {
+      console.log("-> No implicit URL role parameter. Reverting to initial selection model.");
+    }
+
+    // Check localStorage session
+    const savedSessionStr = localStorage.getItem("selonachipa_session");
+    if (savedSessionStr) {
+      try {
+        const savedSession = JSON.parse(savedSessionStr);
+        if (savedSession && savedSession.isLoggedIn) {
+          console.log("-> Restoring active user session from LocalStorage:", savedSession.name, `(${savedSession.role})`);
+          setSelectedRole(savedSession.role);
+          if (savedSession.phone) {
+            setBuyerPhone(savedSession.phone);
+            setBuyerNameInput(savedSession.name);
+            const nameParts = savedSession.name.split(" ");
+            setBuyerFirstName(nameParts[0] || "");
+            setBuyerSurname(nameParts.slice(1).join(" ") || "");
+            if (savedSession.storeName) setSellerStoreName(savedSession.storeName);
+            if (savedSession.landmark) setSellerLocationLandmark(savedSession.landmark);
+            if (savedSession.carrier) setBuyerOperator(savedSession.carrier);
+          }
+          setIsLoggedIn(true);
+          console.log("-> Redirection triggered. User loaded directly into active dashboard.");
+          return;
+        }
+      } catch (e) {
+        console.error("Startup Diagnostics: Failed to parse saved session json", e);
+      }
+    } else {
+      console.log("-> No active session in LocalStorage. Forcing standard secure login/signup screen.");
+    }
+    
+    // Explicit explanation for Buyer setup trigger
+    console.log("-> Diagnostics Verdict: Buyer ledger default state was initialized because no stored session was found in LocalStorage and selectedRole was defaulted to BUYER fallback. Login/registration screen is displayed by default to allow users to authenticate.");
+    console.log("==========================================");
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -2010,19 +2082,26 @@ Keep this secure document for administrative audit.
       </AnimatePresence>
  
       {/* SMARTPHONE EMULATOR FRAME CONTAINER */}
-      <div className="relative w-full max-w-[425px] bg-[#0c0d12] rounded-[48px] p-4.5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] border-6 border-slate-850 overflow-hidden transition-all duration-300" 
-           style={{ height: "860px" }}
-           id="smartphone-frame"
+      <div 
+        className={`${
+          isMobileOrWebView 
+            ? "relative w-full h-full bg-[#050506] p-0 shadow-none border-0 overflow-hidden" 
+            : "relative w-full max-w-[425px] bg-[#0c0d12] rounded-[48px] p-4.5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] border-6 border-slate-850 overflow-hidden transition-all duration-300"
+        }`}
+        style={isMobileOrWebView ? { height: "100vh" } : { height: "860px" }}
+        id="smartphone-frame"
       >
         
-        {/* Top Notch design */}
-        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-32 h-5.5 bg-black rounded-full z-40 flex items-center justify-around px-3 border border-slate-800/60">
-          <span className="w-12 h-1 bg-zinc-800 rounded-full"></span>
-          <span className="w-2 h-2 bg-indigo-950 border border-zinc-900 rounded-full"></span>
-        </div>
+        {/* Top Notch design - only displayed on Desktop Frame */}
+        {!isMobileOrWebView && (
+          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-32 h-5.5 bg-black rounded-full z-40 flex items-center justify-around px-3 border border-slate-800/60">
+            <span className="w-12 h-1 bg-zinc-800 rounded-full"></span>
+            <span className="w-2 h-2 bg-indigo-950 border border-zinc-900 rounded-full"></span>
+          </div>
+        )}
 
         {/* SCREEN CANVAS WRAPPER */}
-        <div className={`w-full h-full bg-[#050506] rounded-[38px] overflow-hidden relative flex flex-col justify-between select-none transition-all duration-300 ${isLightTheme ? "theme-light-active" : ""}`}>
+        <div className={`w-full h-full bg-[#050506] overflow-hidden relative flex flex-col justify-between select-none transition-all duration-300 ${isLightTheme ? "theme-light-active" : ""} ${isMobileOrWebView ? "rounded-none" : "rounded-[38px]"}`}>
           
           {/* LIPILA REAL TIME PAYMENT GATEWAY OVERLAY */}
           <AnimatePresence>
@@ -2564,6 +2643,17 @@ Keep this secure document for administrative audit.
                                   // Default active simulation settings
                                 }
 
+                                localStorage.setItem("selonachipa_session", JSON.stringify({
+                                  isLoggedIn: true,
+                                  role: selectedRole,
+                                  name: authenticatedAccount.name,
+                                  phone: cleanPhone,
+                                  storeName: authenticatedAccount.storeName || "",
+                                  landmark: authenticatedAccount.landmark || "",
+                                  agencyName: authenticatedAccount.agencyName || "",
+                                  vehicleType: authenticatedAccount.vehicleType || "",
+                                  carrier: buyerOperator
+                                }));
                                 setIsLoggedIn(true);
                                 setToast({
                                   message: `Welcome Back, ${authenticatedAccount.name}!`,
@@ -2588,6 +2678,13 @@ Keep this secure document for administrative audit.
                                 onClick={() => {
                                   setBuyerPhone("971122334");
                                   setBuyerNameInput("Google Sandbox Guest");
+                                  localStorage.setItem("selonachipa_session", JSON.stringify({
+                                    isLoggedIn: true,
+                                    role: selectedRole,
+                                    name: "Google Sandbox Guest",
+                                    phone: "971122334",
+                                    carrier: "Airtel"
+                                  }));
                                   setIsLoggedIn(true);
                                   setToast({
                                     message: "Google Social Match Verified",
@@ -2607,6 +2704,13 @@ Keep this secure document for administrative audit.
                                 onClick={() => {
                                   setBuyerPhone("965544332");
                                   setBuyerNameInput("Facebook Sandbox Guest");
+                                  localStorage.setItem("selonachipa_session", JSON.stringify({
+                                    isLoggedIn: true,
+                                    role: selectedRole,
+                                    name: "Facebook Sandbox Guest",
+                                    phone: "965544332",
+                                    carrier: "MTN"
+                                  }));
                                   setIsLoggedIn(true);
                                   setToast({
                                     message: "Facebook Mutual Match Verified",
@@ -3227,6 +3331,15 @@ Keep this secure document for administrative audit.
                                     localAccounts.push(newAcc);
                                     localStorage.setItem("selo_registered_accounts", JSON.stringify(localAccounts));
 
+                                    localStorage.setItem("selonachipa_session", JSON.stringify({
+                                      isLoggedIn: true,
+                                      role: "BUYER",
+                                      name: combined,
+                                      phone: buyerPhone,
+                                      carrier: buyerOperator,
+                                      city: buyerSelectedCity || "Lusaka",
+                                      neighbourhood: buyerNeighbourhood || "Munali"
+                                    }));
                                     setIsLoggedIn(true);
                                     setBuyerFeedTab("FEED");
                                     setToast({
@@ -3422,6 +3535,15 @@ Keep this secure document for administrative audit.
                                     localAccounts.push(newAcc);
                                     localStorage.setItem("selo_registered_accounts", JSON.stringify(localAccounts));
 
+                                    localStorage.setItem("selonachipa_session", JSON.stringify({
+                                      isLoggedIn: true,
+                                      role: selectedRole,
+                                      name: combined,
+                                      phone: buyerPhone,
+                                      storeName: sellerStoreName,
+                                      landmark: sellerLocationLandmark,
+                                      carrier: buyerOperator
+                                    }));
                                     setIsLoggedIn(true);
                                     setToast({
                                       message: `Setup Complete 🎉`,
@@ -3663,9 +3785,34 @@ Keep this secure document for administrative audit.
                 {/* 1. Android top status bar elements */}
                 <div className="bg-[#0b0c10] border-b border-zinc-900 px-4.5 py-2.5 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9.5px] text-amber-500 font-extrabold uppercase bg-amber-500/10 px-1.5 py-0.5 rounded">
-                      {selectedRole} MODE
-                    </span>
+                    <select
+                      value={selectedRole}
+                      onChange={(e) => {
+                        const newR = e.target.value as "BUYER" | "SELLER" | "AGENT" | "RIDER";
+                        setSelectedRole(newR);
+                        
+                        // Sync with localStorage so the active view is saved!
+                        const sess = localStorage.getItem("selonachipa_session");
+                        if (sess) {
+                          try {
+                            const parsed = JSON.parse(sess);
+                            parsed.role = newR;
+                            localStorage.setItem("selonachipa_session", JSON.stringify(parsed));
+                          } catch (err) {}
+                        }
+                        
+                        setToast({
+                          message: `Role Channel Opened: ${newR} Mode ✓`,
+                          subText: `You now have access to all ${newR.toLowerCase()} screens and ledger tools.`
+                        });
+                      }}
+                      className="text-[10px] bg-zinc-900 border border-zinc-800 text-amber-500 font-extrabold uppercase rounded px-2 py-1 outline-none focus:outline-none cursor-pointer hover:border-amber-500/50 transition-colors"
+                    >
+                      <option value="BUYER">🛒 BUYER MODE</option>
+                      <option value="SELLER">🏪 SELLER MODE</option>
+                      <option value="AGENT">💼 AGENT MODE</option>
+                      <option value="RIDER">🏍️ RIDER MODE</option>
+                    </select>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   </div>
                   
@@ -3688,7 +3835,14 @@ Keep this secure document for administrative audit.
 
                     <button 
                       id="back-to-setup-btn"
-                      onClick={() => setIsLoggedIn(false)}
+                      onClick={() => {
+                        localStorage.removeItem("selonachipa_session");
+                        setIsLoggedIn(false);
+                        setToast({
+                          message: "Session Cleared",
+                          subText: "Securely logged out from Zambia ledger stack."
+                        });
+                      }}
                       className="flex items-center gap-1 text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-full py-1 px-2.5 hover:text-white cursor-pointer"
                     >
                       <LogOut className="w-3 h-3 text-red-400" />
@@ -5243,25 +5397,114 @@ Keep this secure document for administrative audit.
                               // Find active order to track, or default to the first one in the list
                               const currentTrackOrderId = buyerSelectTrackingOrderId || (orders.length > 0 ? orders[0].order_id : null);
                               const matchedOrder = orders.find(o => o.order_id === currentTrackOrderId);
-                            
-                            if (!currentTrackOrderId || !matchedOrder) {
+
+                              if (!currentTrackOrderId || !matchedOrder) {
                               return (
-                                <div className="bg-[#0b0c10] border border-zinc-850 rounded-2xl p-6 text-center space-y-3">
-                                  <div className="w-12 h-12 bg-amber-950/20 border border-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto text-xl">
-                                    📦
+                                <div className="bg-[#0b0c10] border border-zinc-850 rounded-2xl p-8 text-center space-y-6 relative overflow-hidden shadow-2xl">
+                                  {/* Deep backdrop accents */}
+                                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-500/25 via-orange-500/40 to-yellow-500/25" />
+                                  <div className="absolute -right-16 -top-16 w-36 h-36 bg-amber-500/5 rounded-full blur-3xl" />
+                                  <div className="absolute -left-16 -bottom-16 w-36 h-36 bg-orange-500/5 rounded-full blur-3xl" />
+                                  
+                                  {/* Holographic Radar Scanner / Satellite tracker illustration (No custom SVG, purely CSS & motion) */}
+                                  <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
+                                    {/* Concentric pulsing radar waves */}
+                                    <motion.div 
+                                      animate={{ scale: [0.8, 1.4, 0.8], opacity: [0.15, 0.4, 0.15] }}
+                                      transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                                      className="absolute inset-0 rounded-full border border-amber-500/25 bg-amber-500/[0.01]" 
+                                    />
+                                    <motion.div 
+                                      animate={{ scale: [1, 1.6, 1], opacity: [0.05, 0.25, 0.05] }}
+                                      transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
+                                      className="absolute inset-2 rounded-full border border-orange-500/10 bg-orange-500/[0.01]" 
+                                    />
+                                    <motion.div 
+                                      animate={{ scale: [0.6, 1.1, 0.6], opacity: [0.2, 0.5, 0.2] }}
+                                      transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", delay: 0.7 }}
+                                      className="absolute inset-6 rounded-full border border-yellow-500/30 bg-yellow-500/[0.02]" 
+                                    />
+
+                                    {/* Map Grid Background inside radar */}
+                                    <div className="absolute inset-10 rounded-full border border-zinc-800 bg-[#07080c] overflow-hidden opacity-80">
+                                      {/* Grid lines */}
+                                      <div className="absolute inset-0 grid grid-cols-4 grid-rows-4 opacity-10">
+                                        <div className="border-r border-b border-white" />
+                                        <div className="border-r border-b border-white" />
+                                        <div className="border-r border-b border-white" />
+                                        <div className="border-r border-b border-white" />
+                                        <div className="border-r border-b border-white" />
+                                        <div className="border-r border-b border-white" />
+                                      </div>
+                                      {/* Radar Sweeping Hand */}
+                                      <motion.div 
+                                        animate={{ rotate: 360 }}
+                                        transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                                        className="absolute top-1/2 left-1/2 w-[150%] h-[1px] bg-gradient-to-r from-amber-500 to-transparent origin-left -translate-y-1/2"
+                                      />
+                                    </div>
+
+                                    {/* Central Floating core with Lucide icons */}
+                                    <motion.div 
+                                      animate={{ y: [0, -6, 0] }}
+                                      transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+                                      className="relative z-10 w-16 h-16 bg-gradient-to-b from-amber-950/40 to-zinc-950 border border-amber-500/35 rounded-2xl flex items-center justify-center shadow-[0_8px_24px_rgba(245,158,11,0.15)]"
+                                    >
+                                      <div className="absolute inset-0 bg-amber-500/5 rounded-2xl animate-pulse" />
+                                      <Globe className="w-8 h-8 text-amber-400 stroke-[1.5]" />
+                                      
+                                      {/* Outer satellite signals */}
+                                      <motion.div 
+                                        animate={{ opacity: [0.3, 1, 0.3], scale: [0.9, 1.1, 0.9] }}
+                                        transition={{ duration: 2, repeat: Infinity }}
+                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center border border-zinc-950 shadow"
+                                      >
+                                        <div className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                      </motion.div>
+                                    </motion.div>
+
+                                    {/* Floating satellite pin 1 */}
+                                    <motion.div 
+                                      animate={{ x: [-15, 15, -15], y: [-5, 5, -5] }}
+                                      transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+                                      className="absolute top-4 left-6 z-10 p-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-md"
+                                    >
+                                      <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                                    </motion.div>
+
+                                    {/* Floating satellite pin 2 */}
+                                    <motion.div 
+                                      animate={{ x: [10, -10, 10], y: [15, -15, 15] }}
+                                      transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+                                      className="absolute bottom-4 right-6 z-10 p-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-md"
+                                    >
+                                      <Package className="w-3.5 h-3.5 text-teal-400" />
+                                    </motion.div>
                                   </div>
-                                  <div>
-                                    <p className="text-xs font-bold text-white">No active orders being tracked</p>
-                                    <p className="text-[10px] text-zinc-500 mt-1 max-w-[210px] mx-auto leading-relaxed">
-                                      Pay for items in your cart to dispatch an on-demand rider and lock funds in escrow!
+
+                                  {/* Explanation details */}
+                                  <div className="space-y-2 max-w-[280px] mx-auto text-left">
+                                    <h4 className="text-sm font-black tracking-tight text-white uppercase font-sans text-center flex items-center justify-center gap-1.5">
+                                      <Sparkles className="w-4 h-4 text-amber-400" />
+                                      Selo Escrow Radar is Idle
+                                    </h4>
+                                    <p className="text-[10.5px] text-zinc-400 text-center leading-relaxed">
+                                      There are no active safe escrow tracker sessions live. Lock buyer funds, order Zambia's freshest co-op stock, and dispatch your on-demand local Moto riders!
                                     </p>
                                   </div>
-                                  <button
-                                    onClick={() => setBuyerFeedTab("REELS")}
-                                    className="mx-auto bg-amber-500 hover:bg-amber-400 text-black font-black text-[10.5px] px-4 py-2 rounded-xl cursor-pointer"
-                                  >
-                                    Go to Reels
-                                  </button>
+
+                                  {/* Premium CTA Button */}
+                                  <div className="pt-2">
+                                    <motion.button
+                                      whileHover={{ scale: 1.02 }}
+                                      whileTap={{ scale: 0.98 }}
+                                      onClick={() => setBuyerFeedTab("REELS")}
+                                      className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-black text-xs py-3 px-5 rounded-xl shadow-[0_4px_20px_rgba(245,158,11,0.25)] cursor-pointer flex items-center justify-center gap-2 transition-all"
+                                    >
+                                      <span>🎥 Explore Sellers & Join Reels</span>
+                                      <ArrowRight className="w-4 h-4 text-black stroke-[3px]" />
+                                    </motion.button>
+                                  </div>
                                 </div>
                               );
                             }
