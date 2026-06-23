@@ -316,7 +316,7 @@ export default function SellerPortalRoot({
 
           {/* Persistent Sticky Bottom Navigation Bar (as requested across all views) */}
           {!isUploadingNewListing && (
-            <div className="absolute inset-x-0 bottom-0 bg-zinc-950/90 [backdrop-filter:blur(8px)] border-t border-zinc-900 py-2 px-1 flex justify-around items-center shrink-0 z-40">
+            <div className="absolute inset-x-0 bottom-0 bg-zinc-950/90 [backdrop-filter:blur(8px)] border-t border-zinc-900 pt-2 pb-[calc(env(safe-area-inset-bottom)+8px)] px-1 flex justify-around items-center shrink-0 z-40">
               {[
                 { id: "HOME", label: "Home", icon: Home },
                 { id: "ORDERS", label: "Orders", icon: ClipboardList, count: orders.filter(o => o.seller_id === "sel-chipo" && o.transit_status === "pending_seller_confirmation").length },

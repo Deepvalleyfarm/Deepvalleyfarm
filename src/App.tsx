@@ -83,6 +83,7 @@ import SellerPortalRoot from "./components/seller/SellerPortalRoot";
 import { RiderPortal } from "./components/rider/RiderPortal";
 import ParcelsModule from "./components/ParcelsModule";
 import AgentPortal from "./components/agent/AgentPortal";
+import TrackingMap from "./components/TrackingMap";
 
 // ==========================================
 // INITIAL MOCK DATA SEED
@@ -5556,6 +5557,14 @@ Keep this secure document for administrative audit.
                                   </div>
                                 </div>
 
+                                {/* Live map tracking visual showing progress along route from merchant to buyer */}
+                                <TrackingMap
+                                  order={matchedOrder}
+                                  merchantLocation={listings.find(l => l.listing_id === matchedOrder.listing_id)?.location || "Manda Hill Mall, Great East Rd, Lusaka, Zambia"}
+                                  buyerLocation={matchedOrder.delivery_address || "Levy Junction Mall, Church Rd, Lusaka, Zambia"}
+                                  currentStepNum={currentStepNum}
+                                />
+
                                 {/* Active Order Picker if multiple */}
                                 {orders.length > 1 && (
                                   <div className="space-y-1.5">
@@ -6407,7 +6416,7 @@ Keep this secure document for administrative audit.
                         onMouseLeave={handleDragScrollMouseLeave}
                         onMouseUp={handleDragScrollMouseUp}
                         onMouseMove={handleDragScrollMouseMove}
-                        className="absolute inset-x-0 bottom-0 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-900 p-2 gap-1.5 shrink-0 overflow-x-auto scrollbar-none no-scrollbar select-none cursor-grab active:cursor-grabbing scroll-smooth z-40 flex items-center shadow-lg"
+                        className="absolute inset-x-0 bottom-0 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-900 p-2 pb-[calc(env(safe-area-inset-bottom)+8px)] gap-1.5 shrink-0 overflow-x-auto scrollbar-none no-scrollbar select-none cursor-grab active:cursor-grabbing scroll-smooth z-40 flex items-center shadow-lg"
                       >
                         <button
                           type="button"

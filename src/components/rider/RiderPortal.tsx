@@ -390,7 +390,7 @@ export const RiderPortal: React.FC<RiderPortalProps> = ({
           </div>
 
           {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
-          <div className="absolute bottom-0 inset-x-0 bg-zinc-950/90 backdrop-blur-md border-t border-zinc-900 py-3.5 px-3 flex justify-around items-center z-50">
+          <div className="absolute bottom-0 inset-x-0 bg-zinc-950/90 backdrop-blur-md border-t border-zinc-900 pt-3.5 pb-[calc(env(safe-area-inset-bottom)+14px)] px-3 flex justify-around items-center z-50">
             <button
               onClick={() => setActiveTab("HOME")}
               className={`flex flex-col items-center gap-1 cursor-pointer transition-all ${

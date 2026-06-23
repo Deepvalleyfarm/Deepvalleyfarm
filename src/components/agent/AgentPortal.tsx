@@ -1650,7 +1650,7 @@ export default function AgentPortal({
 
       {/* 5. STICKY BOTTOM PERSISTENT NAVIGATION BAR FOR AGENTS (sticky at the very bottom screens) */}
       {isUnlocked && (
-        <div className="absolute inset-x-0 bottom-0 bg-zinc-950/95 [backdrop-filter:blur(8px)] border-t border-zinc-900 py-1.5 px-1 flex justify-around items-center shrink-0 z-40">
+        <div className="absolute inset-x-0 bottom-0 bg-zinc-950/95 [backdrop-filter:blur(8px)] border-t border-zinc-900 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] px-1 flex justify-around items-center shrink-0 z-40">
           {[
             { id: "HOME", label: "Home", icon: "⚡" },
             { id: "SELLERS", label: "Sellers", icon: "👥" },
