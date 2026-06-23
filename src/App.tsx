@@ -334,7 +334,15 @@ export default function App() {
   };
 
   // Authentication & Navigation
-  const [selectedRole, setSelectedRole] = useState<"BUYER" | "SELLER" | "AGENT" | "RIDER">("BUYER");
+  const [selectedRole, setSelectedRole] = useState<"BUYER" | "SELLER" | "AGENT" | "RIDER">(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("role")?.toUpperCase();
+      if (p === "BUYER" || p === "SELLER" || p === "AGENT" || p === "RIDER") {
+        return p as "BUYER" | "SELLER" | "AGENT" | "RIDER";
+      }
+    }
+    return "BUYER";
+  });
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   
   // Local "Backend Database" State

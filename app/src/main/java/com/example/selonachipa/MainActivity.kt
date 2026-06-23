@@ -1,8 +1,13 @@
 package com.example.selonachipa
 
 import android.os.Bundle
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,10 +46,70 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFF050506) // Very dark background matching the mock-up
                 ) {
-                    RoleSelectionScreen()
+                    var webViewUrl by remember { mutableStateOf<String?>(null) }
+
+                    if (webViewUrl != null) {
+                        WebViewScreen(url = webViewUrl!!, onBackToRoles = { webViewUrl = null })
+                    } else {
+                        RoleSelectionScreen(onNavigateToWeb = { role ->
+                            webViewUrl = "https://ais-pre-hes63u67hy33o4p2nwlgzv-866799298460.europe-west2.run.app/?role=${role.name}"
+                        })
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun WebViewScreen(url: String, onBackToRoles: () -> Unit) {
+    var webView: WebView? by remember { mutableStateOf(null) }
+
+    // Intercept hardware or software back button to steer inside WebView history gracefully
+    BackHandler(enabled = true) {
+        if (webView?.canGoBack() == true) {
+            webView?.goBack()
+        } else {
+            onBackToRoles()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                            if (url != null) {
+                                view?.loadUrl(url)
+                            }
+                            return true
+                        }
+                    }
+                    webChromeClient = WebChromeClient()
+
+                    // Grant optimal modern settings for full hybrid application rendering
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.loadsImagesAutomatically = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+
+                    loadUrl(url)
+                    webView = this
+                }
+            },
+            update = { view ->
+                // WebView keeps the layout instance
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
@@ -52,7 +118,7 @@ enum class UserRole {
 }
 
 @Composable
-fun RoleSelectionScreen() {
+fun RoleSelectionScreen(onNavigateToWeb: (UserRole) -> Unit) {
     val context = LocalContext.current
     var selectedRole by remember { mutableStateOf(UserRole.BUYER) }
 
@@ -225,6 +291,7 @@ fun RoleSelectionScreen() {
                         UserRole.RIDER -> "Courier dispatcher grid joining"
                     }
                     Toast.makeText(context, "$roleLabel is initialized in the backend ledger system.", Toast.LENGTH_LONG).show()
+                    onNavigateToWeb(selectedRole)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
